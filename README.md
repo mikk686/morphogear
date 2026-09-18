@@ -26,6 +26,10 @@ After adding the image, uncomment:
 </p>
 -->
 
+<p align="center">
+  <img src="images/Robot.jpg" width="850" alt="MorphoGear aerial-ground vehicle">
+</p>
+
 ## Overview
 
 **MorphoGear** is a multimodal aerial–ground robotic platform capable of flying, walking over uneven terrain, and interacting with objects using four articulated limbs.
@@ -56,6 +60,10 @@ After adding the image, uncomment:
   <img src="docs/images/morphogear_modes.jpg" width="800" alt="MorphoGear operation modes">
 </p>
 -->
+
+<p align="center">
+  <img src="images/CAD.jpg" width="800" alt="MorphoGear CAD Model">
+</p>
 
 ## Capabilities
 
@@ -181,6 +189,10 @@ After adding the image, uncomment:
 </p>
 -->
 
+<p align="center">
+  <img src="images/Interface.png" width="800" alt="MorphoGear Unity simulation">
+</p>
+
 ### 3. Build the current ROS 2 node
 
 Source your ROS 2 installation:
@@ -285,6 +297,10 @@ After adding the image, uncomment:
   <img src="docs/images/gait_sequence.jpg" width="800" alt="MorphoGear walking gait sequence">
 </p>
 -->
+
+<p align="center">
+  <img src="images/collage.png" width="800" alt="MorphoGear experiment pictures">
+</p>
 
 ## Development Notes
 
