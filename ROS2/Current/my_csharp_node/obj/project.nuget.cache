@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "st56aT4bzE4=",
+  "success": true,
+  "projectFilePath": "/home/orangepi/ros2_ws/src/my_csharp_node/my_csharp_node.csproj",
+  "expectedPackageFiles": [
+    "/home/orangepi/.nuget/packages/microsoft.net.illink.tasks/8.0.31/microsoft.net.illink.tasks.8.0.31.nupkg.sha512",
+    "/home/orangepi/.nuget/packages/microsoft.toolkit.highperformance/7.1.2/microsoft.toolkit.highperformance.7.1.2.nupkg.sha512",
+    "/home/orangepi/.nuget/packages/rcl.net/2.1.2/rcl.net.2.1.2.nupkg.sha512",
+    "/home/orangepi/.nuget/packages/rosidl.runtime/2.1.2/rosidl.runtime.2.1.2.nupkg.sha512"
+  ],
+  "logs": []
+}

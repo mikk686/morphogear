@@ -1,0 +1,16 @@
+float32 rf_shoulder_speed
+float32 rf_upperarm_speed
+float32 rf_forearm_speed
+float32 rh_shoulder_speed
+float32 rh_upperarm_speed
+float32 rh_forearm_speed
+float32 lf_shoulder_speed
+float32 lf_upperarm_speed
+float32 lf_forearm_speed
+float32 lh_shoulder_speed
+float32 lh_upperarm_speed
+float32 lh_forearm_speed
+float32 rf_wrist_speed
+float32 rh_wrist_speed
+float32 lf_wrist_speed
+float32 lh_wrist_speed

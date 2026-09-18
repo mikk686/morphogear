@@ -1,0 +1,12 @@
+int8 rf_shoulder
+int8 rf_upperarm
+int8 rf_forearm
+int8 rh_shoulder
+int8 rh_upperarm
+int8 rh_forearm
+int8 lf_shoulder
+int8 lf_upperarm
+int8 lf_forearm
+int8 lh_shoulder
+int8 lh_upperarm
+int8 lh_forearm

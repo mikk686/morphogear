@@ -1,0 +1,89 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0/linux-arm64",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {},
+    ".NETCoreApp,Version=v8.0/linux-arm64": {
+      "my_csharp_node/1.0.0": {
+        "dependencies": {
+          "Microsoft.NET.ILLink.Tasks": "8.0.31",
+          "Rcl.NET": "2.1.2",
+          "Rosidl.Runtime": "2.1.2"
+        },
+        "runtime": {
+          "my_csharp_node.dll": {}
+        }
+      },
+      "Microsoft.NET.ILLink.Tasks/8.0.31": {},
+      "Microsoft.Toolkit.HighPerformance/7.1.2": {
+        "runtime": {
+          "lib/net5.0/Microsoft.Toolkit.HighPerformance.dll": {
+            "assemblyVersion": "7.1.0.0",
+            "fileVersion": "7.1.2.1"
+          }
+        }
+      },
+      "Rcl.NET/2.1.2": {
+        "dependencies": {
+          "Microsoft.Toolkit.HighPerformance": "7.1.2",
+          "Rosidl.Runtime": "2.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Rcl.NET.dll": {
+            "assemblyVersion": "2.1.2.0",
+            "fileVersion": "2.1.2.0"
+          }
+        }
+      },
+      "Rosidl.Runtime/2.1.2": {
+        "dependencies": {
+          "Microsoft.Toolkit.HighPerformance": "7.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Rosidl.Runtime.dll": {
+            "assemblyVersion": "2.1.2.0",
+            "fileVersion": "2.1.2.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "my_csharp_node/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.NET.ILLink.Tasks/8.0.31": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-OJdAGATV2QoVWL11zlDLEluA06q8rK+cgZR47ohrO8V+Qj5z9dlvN7bG9/0e5t0IOe+yD8tREC0bpsEgDGrzIQ==",
+      "path": "microsoft.net.illink.tasks/8.0.31",
+      "hashPath": "microsoft.net.illink.tasks.8.0.31.nupkg.sha512"
+    },
+    "Microsoft.Toolkit.HighPerformance/7.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-cezzRky0BUJyYmSrcQUcX8qAv90JfUwCqWEbqfWZLHyeANo9/LWgW6y50pqbyc8r8SPXVsu2GNH98fB3VxrnvA==",
+      "path": "microsoft.toolkit.highperformance/7.1.2",
+      "hashPath": "microsoft.toolkit.highperformance.7.1.2.nupkg.sha512"
+    },
+    "Rcl.NET/2.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-UmzEbCa7/OkFIZhzrc6z8Qbha2grzKz0/R37lVY4ixoehecSb54m/jkHWYX1AF6D28++dmuqB+Hro3AY/zFDOA==",
+      "path": "rcl.net/2.1.2",
+      "hashPath": "rcl.net.2.1.2.nupkg.sha512"
+    },
+    "Rosidl.Runtime/2.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-sPHzgF/0Pso8Rpxhctc0XYL6n+CuIaUndjA4ru7zUwrB/tzp+qmvSuT/PXoIR3qaDHGJRXgoeouNcqDrvz4VrA==",
+      "path": "rosidl.runtime/2.1.2",
+      "hashPath": "rosidl.runtime.2.1.2.nupkg.sha512"
+    }
+  }
+}

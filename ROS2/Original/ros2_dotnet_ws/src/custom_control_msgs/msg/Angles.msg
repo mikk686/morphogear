@@ -1,0 +1,12 @@
+float32 rf_shoulder
+float32 rf_upperarm
+float32 rf_forearm
+float32 rh_shoulder
+float32 rh_upperarm
+float32 rh_forearm
+float32 lf_shoulder
+float32 lf_upperarm
+float32 lf_forearm
+float32 lh_shoulder
+float32 lh_upperarm
+float32 lh_forearm

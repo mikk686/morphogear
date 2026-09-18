@@ -1,0 +1,2 @@
+/home/orangepi/ros2_ws/src/my_csharp_node/bin/my_csharp_node.pdb
+/home/orangepi/ros2_ws/src/my_csharp_node/bin/my_csharp_node
