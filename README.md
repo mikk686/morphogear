@@ -62,7 +62,7 @@ After adding the image, uncomment:
 -->
 
 <p align="center">
-  <img src="images/CAD.jpg" width="800" alt="MorphoGear CAD Model">
+  <img src="images/CAD.JPG" width="800" alt="MorphoGear CAD Model">
 </p>
 
 ## Capabilities
@@ -373,7 +373,7 @@ If you use MorphoGear in academic work, please cite:
 > M. Martynov, Z. Darush, A. Fedoseev, and D. Tsetserukou,  
 > “MorphoGear: An UAV with Multi-Limb Morphogenetic Gear for Rough-Terrain Locomotion,”  
 > in *2023 IEEE/ASME International Conference on Advanced Intelligent Mechatronics (AIM)*, 2023, pp. 11–16.  
-> [arXiv:2403.08340](https://arxiv.org/abs/2403.08340)
+> [10.1109/AIM46323.2023.10196115](doi.org/10.1109/AIM46323.2023.10196115)
 
 ### BibTeX
 
@@ -387,7 +387,7 @@ If you use MorphoGear in academic work, please cite:
                Advanced Intelligent Mechatronics (AIM)},
   year      = {2023},
   pages     = {11--16},
-  url       = {https://arxiv.org/abs/2403.08340}
+  url       = {doi.org/10.1109/AIM46323.2023.10196115}
 }
 ```
 
