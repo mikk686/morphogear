@@ -10,7 +10,8 @@ from std_msgs.msg import String
 #from unity_robotics_demo_msgs.msg import Angles
 from std_msgs.msg import Int8MultiArray
 from custom_control_msg.msg import Torque 
-from custom_control_msg.msg import Wrist
+#from custom_control_msg.msg import Wrist
+from std_msgs.msg import Int16MultiArray
 from custom_control_msg.msg import Speed 
 
 from .p2p_rtu import P2P_RTU 
@@ -21,7 +22,8 @@ class STM(Node):
     def __init__(self, serial_port_name:str, baudrate=921600): 
         super().__init__("stm_node")
         self.anglesub=self.create_subscription(Int8MultiArray, "/angles_control",self.set_angles_callback,10)
-        self.wristsub=self.create_subscription(Wrist, "/wrist",self.set_wrist_callback,10)
+        #self.wristsub=self.create_subscription(Wrist, "/wrist",self.set_wrist_callback,10)
+        self.wristsub=self.create_subscription(Int16MultiArray, "/wrist",self.set_wrist,10)
         self.speedsub=self.create_subscription(Speed, "/speed",self.set_speed_callback,10)
         self.torquepub = self.create_publisher(Torque, "/torque", 10) ##
         self.set_speed_cmd = 0x03
@@ -115,8 +117,18 @@ class STM(Node):
         self.get_logger().info('Publishing gripper: "%s"' % parsed_data)
         self.__send_write_request(self.set_ax_angles, parsed_data)
 
+    def set_wrist(self, msg): 
+        parsed_data = self.__parse_data_ax_msg(msg)
+        self.get_logger().info('Publishing gripper: "%s"' % parsed_data)
+        self.__send_write_request(self.set_ax_angles, parsed_data)
+
     def __parse_data_ax(self, data)->list: 
         parsed_data = [int (data.rf_wrist),int (data.lf_wrist), int (data.lh_wrist), int (data.rh_wrist)]
+        return parsed_data
+
+
+    def __parse_data_ax_msg(self, msg)->list: 
+        parsed_data = [int (msg.data[0]),int (msg.data[3]), int (msg.data[2]), int (msg.data[1])]
         return parsed_data
 
     def set_angles_callback(self, data):

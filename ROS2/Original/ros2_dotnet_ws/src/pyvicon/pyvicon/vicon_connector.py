@@ -18,6 +18,7 @@ class VICON(Node):
         VICON_TRACKER_IP = "192.168.50.73"
         self.OBJECT_NAME = "morphogear"
         vicon_client = pv.PyViconDatastream()
+        print("Connecting to VICON")
         ret = vicon_client.connect(VICON_TRACKER_IP)
         if ret != pv.Result.Success:
             print(f"Connection to {VICON_TRACKER_IP} failed")
@@ -41,17 +42,21 @@ class VICON(Node):
         #print(f"Position: {position}")
         try:
             tmp=position[2]
+            if tmp==[]:
+                #print("No object detected by VICON, RECIEVED VALUE:")
+                #print(position)
+                return
         except:
-            print(position)
+            #print(position)
             return
         pose=tmp[0][2:5]
         rot=tmp[0][5:8]
         rot = Rotation.from_euler('xyz', rot, degrees=True).as_quat(scalar_first=False)
         #print(rot)
         #print(rot.as_euler('xyz', degrees=True))
-        self.msg.pose.position.x = pose[1]/1000
-        self.msg.pose.position.y = pose[0]/1000
-        self.msg.pose.position.z = -pose[2]/1000
+        self.msg.pose.position.x = pose[0]/1000
+        self.msg.pose.position.y = pose[1]/1000
+        self.msg.pose.position.z = pose[2]/1000
         self.msg.pose.orientation.x = rot[0]
         self.msg.pose.orientation.y = rot[1]
         self.msg.pose.orientation.z = rot[2]

@@ -32,7 +32,8 @@ class MPCNode(Node):
         self.fly_point_msg_pub = self.create_publisher( PoseStamped, '/fly_point', 1)
         self.fly_msg_pub = self.create_publisher(Bool, '/ly_condition', 1)
         self.land_msg_pub = self.create_publisher( Bool, '/land_condition', 1)
-        self.target_pub = self.create_publisher( Bool, '/target_reached', 1)
+        #self.target_pub = self.create_publisher( Bool, '/target_reached', 1)
+        self.state_pub = self.create_publisher (String, '/state_info',1)
 
         #-------------------------Initialisers
         self.vicon_x = []
@@ -49,6 +50,7 @@ class MPCNode(Node):
         self.path_tolerance = 15
         self.corner_tolerance = 15
         self.count = 0
+        print("Kinematic MPC is ready")
     
     # -------------------Function to publish standing initial angles
     def standing_angles_message(self):
@@ -89,6 +91,8 @@ class MPCNode(Node):
         return vc, vy, vz
     # -------------------Function for point callback to get corner points of trajectory
     def point_callback(self, msg):
+        print("Recieved Coordinates to walk")
+        self.points_received = False
         self.x_cord = []
         self.y_cord = []
         self.z_cord = []
@@ -103,9 +107,10 @@ class MPCNode(Node):
             if z == 0:
                 z = z + 0.4
             self.z_cord.append(z)
-        msg = Empty()
-        self.request_theta_pub.publish(msg)
         self.points_received = True
+        msgTrigger = Empty()
+        self.request_theta_pub.publish(msgTrigger)
+
 
     def path_storing(self):
         self.x_path = self.x_cord
@@ -114,10 +119,21 @@ class MPCNode(Node):
         return self.x_path, self.y_path, self.z_cord
     # -------------------Function to publish success message when target reached
     def success_message(self):
-        self.success_msg = Bool()
-        self.success_msg.data = True
-        self.target_pub.publish(self.success_msg)
+        # self.success_msg = Bool()
+        # self.success_msg.data = True
+        # self.target_pub.publish(self.success_msg)
+        msg=String()
+        msg.data="locomotion done"
+        self.state_pub.publish(msg)
+        self.points_received=False
         print('Success Message Published')
+
+    def ongoing_message(self):
+        msg=String()
+        msg.data="locomotion"
+        self.state_pub.publish(msg)
+        print('Success Message Published')
+
     # -------------------Function to publish flight point message when obstacle detected
     def flight_message(self, target_point):
         fly_msg = PoseStamped()
@@ -176,12 +192,13 @@ class MPCNode(Node):
             msg.data = 'initial'
             self.gait1_publisher.publish(msg)
             self.index=1
+            self.success_message()
             return 
         print ('self orientation', np.rad2deg(quaternion.as_euler_angles(self.orientation)))
         print('local target point: ', target_point)
         print('corner point index: ', self.index)
 
-
+        self.ongoing_message()
         print("DISTANCE ", np.linalg.norm(target_point))
         # if self.index != (len(self.points)):
         #     if np.linalg.norm(target_point) < self.point_tolerance:
@@ -372,6 +389,24 @@ class MPCNode(Node):
                     msg.data="backwardKMPC_"+ str(angle2)
             self.gait1_publisher.publish(msg)
             return
+
+
+        #NEW to make smooth motion and decrease adjusting on each point
+        #if   (abs(step_length1) < step_length_max/3 and abs(step_length2) < step_length_max/3): 
+        if (abs(step_length1) + abs(step_length2) < step_length_max):
+            self.index+=1
+            if (self.index == len(self.points)):
+                self.index-=1
+                print("END")
+                msg=String()
+                msg.data="initialAccurate"
+                self.index=1
+                self.gait1_publisher.publish(msg)
+                self.success_message()
+                return
+            else:
+                self.MPC_activation_PHD()
+                return  
         
         def trajectory_generator(step_length): 
             print("IM HERE")
@@ -406,9 +441,6 @@ class MPCNode(Node):
             trajectoryX = np.concatenate((xstep, xspiral))      
             trajectoryY = np.concatenate((ystep, yspiral))
             return trajectoryX,trajectoryY
-
-
-        
 
         def trajectory_generator2(step_length): 
             theta = np.linspace( np.pi, 0, 100), 
@@ -474,7 +506,6 @@ class MPCNode(Node):
 
         num_start=70
         num=num_start+100
-
 
         if step_length2>0:
             t1_BL=np.concatenate((t1_1[100:],t1_1[:100]))

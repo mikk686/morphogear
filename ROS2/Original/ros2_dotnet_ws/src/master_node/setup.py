@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'fcu_ros_connector'
+package_name = 'master_node'
 
 setup(
     name=package_name,
@@ -20,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'set_origin = fcu_ros_connector.set_origin:main',
-            'talker = fcu_ros_connector.FCU_Node:main'
+            'talker = master_node.master:main',
         ],
     },
 )

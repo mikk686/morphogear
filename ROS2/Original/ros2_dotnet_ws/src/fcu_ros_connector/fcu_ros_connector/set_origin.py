@@ -102,12 +102,12 @@ class OriginSetterNode(Node):
             self.get_logger().info('SET ORIGIN: Waiting FCU...')
             pass
    
-        for _ in range(2):
-            print("Here")
-            time.sleep(1)
-            self.get_logger().info('Publishing1')
-            set_global_origin(mav, mavlink_pub)
-            set_home_position(mav, mavlink_pub)
+        # for _ in range(2):
+        #     print("Here")
+        time.sleep(1)
+        self.get_logger().info('Publishing1')
+        set_global_origin(mav, mavlink_pub)
+        set_home_position(mav, mavlink_pub)
 
 
 def main(args=None):
