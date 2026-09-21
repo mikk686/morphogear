@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rosidl_default_runtime</name>
+  <version>1.5.0</version>
+  <description>A configuration package defining the runtime for the ROS interfaces.</description>
+
+  <maintainer email="sloretz@openrobotics.org">Shane Loretz</maintainer>
+
+  <license>Apache License 2.0</license>
+
+  <author email="dthomas@osrfoundation.org">Dirk Thomas</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_export_depend>rosidl_core_runtime</build_export_depend>
+
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>service_msgs</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

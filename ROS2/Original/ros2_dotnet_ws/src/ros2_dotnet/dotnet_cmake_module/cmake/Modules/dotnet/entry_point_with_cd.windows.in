@@ -1,0 +1,2 @@
+cd /D %~f0\dotnet\
+dotnet %~f0\dotnet\@DOTNET_DLL_PATH@ %*
