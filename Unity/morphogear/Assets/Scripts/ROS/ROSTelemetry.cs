@@ -1,9 +1,13 @@
 using Calculations;
 using RosMessageTypes.BuiltinInterfaces;
 using RosMessageTypes.Geometry;
+using RosMessageTypes.Nav;
+using RosMessageTypes.Sensor;
 using RosMessageTypes.Std;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using Unity.Collections;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using UnityEngine;
@@ -17,6 +21,10 @@ public class ROSTelemetry : MonoBehaviour
     public string subTopicName = "angles_control";
 
     public string topicName = "/vicon/morphogear";
+
+    public string depthTopic = "/depth";
+
+    public string odometryTopic = "/odometry";
 
 
     public GameObject morphogear;
@@ -41,6 +49,10 @@ public class ROSTelemetry : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
 
 
+    public RGBDCamera rgbdCamera;
+    private byte[] _depth16UC1;
+    private bool isPublishingDepth = false;
+
     private void Awake()
     {
         for (int i = 0; i < 12; ++i)
@@ -48,6 +60,8 @@ public class ROSTelemetry : MonoBehaviour
             positions.Add(0f);
             _controlPositions.Add(0f);
         }
+
+        _depth16UC1 = new byte[640 * 480 * 2];
     }
 
 
@@ -62,12 +76,21 @@ public class ROSTelemetry : MonoBehaviour
         ros.Subscribe<Int8MultiArrayMsg>(subTopicName, JointCallbackSmooth); //if visualization of robot state
         ros.RegisterPublisher<TransformStampedMsg>(topicName); //if simulation for robot 
 
+        ros.RegisterPublisher<ImageMsg>(depthTopic);
+
+        if (rgbdCamera != null)
+        {
+            rgbdCamera.OnSensorUpdated += OnDepthUpdated;
+        }
+
+        ros.RegisterPublisher<OdometryMsg>(odometryTopic);
     }
 
     // Update is called once per frame
     void Update()
     {
 
+        
 
     }
 
@@ -79,7 +102,104 @@ public class ROSTelemetry : MonoBehaviour
 
         if (simulation) ros.Publish(topicName, UpdateTransform());
 
+        PublishOdometry();
 
+
+    }
+
+    private void PublishOdometry()
+    {
+        // 1. Позиция и поворот в мировых координатах Unity (предполагаем, что старт в 0,0,0)
+        // Если старт не в 0,0,0, нужно вычитать стартовый трансформ!
+        Vector3 worldPos = morphogear.transform.position;
+        Quaternion worldRot = morphogear.transform.rotation;
+
+        // 2. ПЕРЕВОД СКОРОСТЕЙ ИЗ ГЛОБАЛЬНЫХ В ЛОКАЛЬНЫЕ (Body Frame)
+        // InverseTransformDirection переводит вектор из мирового пространства Unity в локальное пространство morphogear
+        Vector3 localLinearVel = morphogear.transform.InverseTransformDirection(articulationbody.linearVelocity);
+
+        // Для угловой скорости в Unity ArticulationBody использует мировые координаты, переводим в локальные:
+        Vector3 localAngularVel = morphogear.transform.InverseTransformDirection(articulationbody.angularVelocity);
+
+        OdometryMsg odomMsg = new OdometryMsg
+        {
+            // В ROS2/ROS обычно не используют ведущий слэш "/" для frame_id (пишут просто "odom" и "base_link")
+            header = new HeaderMsg { frame_id = "odom", stamp = GetCurrentRosTime() },
+            child_frame_id = "base_link",
+
+            // Pose выражается в ГЛОБАЛЬНЫХ координатах (odom) -> переводим глобальный Unity в FLU
+            pose = new PoseWithCovarianceMsg
+            {
+                pose = new PoseMsg
+                {
+                    position = worldPos.To<FLU>(),
+                    orientation = worldRot.To<FLU>()
+                }
+            },
+
+            // Twist выражается в ЛОКАЛЬНЫХ координатах (base_link) -> переводим локальный Unity в FLU
+            twist = new TwistWithCovarianceMsg
+            {
+                twist = new TwistMsg
+                {
+                    linear = localLinearVel.To<FLU>(),
+                    angular = localAngularVel.To<FLU>()
+                }
+            }
+        };
+
+        ros.Publish(odometryTopic, odomMsg);
+    }
+
+
+    private async void OnDepthUpdated()
+    {
+        if (isPublishingDepth || !rgbdCamera.Depth16Data.IsCreated) return;
+        isPublishingDepth = true;
+        try
+        {
+            await Task.Run(() => PackDepthDataUltraFast(rgbdCamera.Depth16Data, _depth16UC1));
+
+            ImageMsg depthMsg = new ImageMsg
+            {
+                header = new HeaderMsg { frame_id = $"camera_depth_link", stamp = GetCurrentRosTime() },
+                height = (uint)480,
+                width = (uint)640,
+                encoding = "16UC1",
+                is_bigendian = 0,
+                step = (uint)(640 * 2),
+                data = _depth16UC1
+            };
+
+            ros.Publish(depthTopic, depthMsg);
+        }
+        finally
+        {
+            isPublishingDepth = false;
+        }
+    }
+
+    private void PackDepthDataUltraFast(NativeArray<uint> gpuDepthData, byte[] destinationByteArray)
+    {
+        int length = gpuDepthData.Length;
+        unsafe
+        {
+            fixed (byte* destPtr = destinationByteArray)
+            {
+                ushort* dest16 = (ushort*)destPtr;
+                for (int i = 0; i < length; i++)
+                {
+                    dest16[i] = (ushort)gpuDepthData[i];
+                }
+            }
+        }
+    }
+
+    private TimeMsg GetCurrentRosTime()
+    {
+        int sec = (int)Time.realtimeSinceStartup;
+        uint nanosec = (uint)((Time.realtimeSinceStartup - sec) * 1e9);
+        return new TimeMsg(sec, nanosec);
     }
 
     private Int8MultiArrayMsg UpdateIntJointsStateStd()
@@ -88,18 +208,18 @@ public class ROSTelemetry : MonoBehaviour
         if (articulationbody.immovable) dofCount = 0;
         else dofCount = 6;
 
-        sbyte rh_shoulder = Convert.ToSByte(positions[0 + dofCount] * Mathf.Rad2Deg);
-        sbyte lh_shoulder = Convert.ToSByte(positions[1 + dofCount] * Mathf.Rad2Deg);
-        sbyte lf_shoulder = Convert.ToSByte(positions[2 + dofCount] * Mathf.Rad2Deg);
-        sbyte rf_shoulder = Convert.ToSByte(positions[3 + dofCount] * Mathf.Rad2Deg);
-        sbyte rh_upperarm = Convert.ToSByte(positions[4 + dofCount] * Mathf.Rad2Deg);
-        sbyte lh_upperarm = Convert.ToSByte(positions[5 + dofCount] * Mathf.Rad2Deg);
-        sbyte lf_upperarm = Convert.ToSByte(positions[6 + dofCount] * Mathf.Rad2Deg);
-        sbyte rf_upperarm = Convert.ToSByte(positions[7 + dofCount] * Mathf.Rad2Deg);
-        sbyte rh_forearm = Convert.ToSByte(positions[8 + dofCount] * Mathf.Rad2Deg);
-        sbyte lh_forearm = Convert.ToSByte(positions[9 + dofCount] * Mathf.Rad2Deg);
-        sbyte lf_forearm = Convert.ToSByte(positions[10 + dofCount] * Mathf.Rad2Deg);
-        sbyte rf_forearm = Convert.ToSByte(positions[11 + dofCount] * Mathf.Rad2Deg);
+        sbyte lf_shoulder = Convert.ToSByte(positions[0 + dofCount] * Mathf.Rad2Deg);
+        sbyte rf_shoulder = Convert.ToSByte(positions[1 + dofCount] * Mathf.Rad2Deg);
+        sbyte lh_shoulder = Convert.ToSByte(positions[2 + dofCount] * Mathf.Rad2Deg);
+        sbyte rh_shoulder = Convert.ToSByte(positions[3 + dofCount] * Mathf.Rad2Deg);
+        sbyte lf_upperarm = Convert.ToSByte(positions[4 + dofCount] * Mathf.Rad2Deg);
+        sbyte rf_upperarm = Convert.ToSByte(positions[5 + dofCount] * Mathf.Rad2Deg);
+        sbyte lh_upperarm = Convert.ToSByte(positions[6 + dofCount] * Mathf.Rad2Deg);
+        sbyte rh_upperarm = Convert.ToSByte(positions[7 + dofCount] * Mathf.Rad2Deg);
+        sbyte lf_forearm = Convert.ToSByte(positions[8 + dofCount] * Mathf.Rad2Deg);
+        sbyte rf_forearm = Convert.ToSByte(positions[9 + dofCount] * Mathf.Rad2Deg);
+        sbyte lh_forearm = Convert.ToSByte(positions[10 + dofCount] * Mathf.Rad2Deg);
+        sbyte rh_forearm = Convert.ToSByte(positions[11 + dofCount] * Mathf.Rad2Deg);
 
 
         var data = new sbyte[] { rf_shoulder, rh_shoulder, lh_shoulder, lf_shoulder, rf_upperarm, rh_upperarm, lh_upperarm, lf_upperarm, rf_forearm, rh_forearm, lh_forearm, lf_forearm };

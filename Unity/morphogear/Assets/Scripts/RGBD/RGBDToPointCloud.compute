@@ -1,0 +1,81 @@
+﻿#pragma kernel CSMain
+
+Texture2D<float> DepthTexture;
+
+// ONLY the 16-bit ROS depth buffer remains
+RWStructuredBuffer<uint> Depth16Buffer;
+
+float4x4 _InvProjMatrix;
+float2 resolution;
+float time;
+float noiseSigma;
+float maxRange;
+
+// Ultra-fast noise
+float FastNoise(float2 uv)
+{
+    return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453) * 2.0 - 1.0;
+}
+
+float nrand(float2 uv)
+{
+    return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453);
+}
+
+
+float GaussianNoise(float2 uv)
+{
+    float u1 = max(nrand(uv + time), 0.0001);
+    float u2 = nrand(uv - time);
+    return sqrt(-2.0 * log(u1)) * cos(6.28318530718 * u2);
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) resolution.x || id.y >= (uint) resolution.y)
+        return;
+
+    // Auto-flip Y axis for ROS Image Data
+    int rosIndex = ((int) resolution.y - 1 - id.y) * (int) resolution.x + id.x;
+
+    float rawDepth = DepthTexture[id.xy];
+    float ndcX = ((float) id.x / resolution.x) * 2.0 - 1.0;
+    float ndcY = ((float) id.y / resolution.y) * 2.0 - 1.0;
+    
+    float4 clipPos = float4(ndcX, ndcY, rawDepth, 1.0);
+    float4 viewPos = mul(_InvProjMatrix, clipPos);
+    viewPos /= viewPos.w;
+
+    float originalZ = -viewPos.z;
+
+    // Background Culling
+    if (originalZ >= maxRange * 0.95 || originalZ <= 0.01)
+    {
+        Depth16Buffer[rosIndex] = 65535;
+        return;
+    }
+
+    // Simulate Stereo Shadows
+    uint rightX = min(id.x + 3, (uint) resolution.x - 1);
+    float rawRight = DepthTexture[uint2(rightX, id.y)];
+    float ndcRightX = ((float) rightX / resolution.x) * 2.0 - 1.0;
+    float4 clipRight = float4(ndcRightX, ndcY, rawRight, 1.0);
+    float4 viewRight = mul(_InvProjMatrix, clipRight);
+    viewRight /= viewRight.w;
+    float rightZ = -viewRight.z;
+
+    if (rightZ < maxRange * 0.95 && abs(originalZ - rightZ) > (originalZ * 0.1))
+    {
+        Depth16Buffer[rosIndex] = 65535;
+        return;
+    }
+
+    // Depth Quantization & Noise
+    float currentZ = round(originalZ * 500.0) / 500.0;
+    float distanceError = (currentZ * currentZ) * noiseSigma;
+    float noisyZ = currentZ + (GaussianNoise(id.xy) * distanceError);
+    
+    // Store 16-bit ROS depth
+    Depth16Buffer[rosIndex] = (uint) (clamp(noisyZ * 1000.0, 0.0, 65535.0));
+}

@@ -474,6 +474,7 @@ namespace ConsoleApplication
                 case "rightAuto":    ExecuteStepAngle(2, value); break; ///NEW
                 case "backwardAuto": ExecuteStepAngle(3, value); break; ///NEW
                 case "leftAuto":     ExecuteStepAngle(4, value); break; ///NEW
+                case "turnAuto":     ExecuteRotatePosition(-value,20); break;
                 case "sitdown":      ExecuteSitDown(20f); break;
                 default: Console.WriteLine($"Unknown command: {cmd}"); break;
             }
