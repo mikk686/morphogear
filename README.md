@@ -26,6 +26,10 @@ After adding the image, uncomment:
 </p>
 -->
 
+<p align="center">
+  <img src="images/Robot.jpg" width="850" alt="MorphoGear aerial-ground robot">
+</p>
+
 ## Overview
 
 **MorphoGear** is a multimodal aerial–ground robotic platform capable of flying, walking over uneven terrain, and interacting with objects using four articulated limbs.
@@ -56,7 +60,9 @@ After adding the image, uncomment:
   <img src="docs/images/morphogear_modes.jpg" width="800" alt="MorphoGear operation modes">
 </p>
 -->
-
+<p align="center">
+  <img src="images/CAD.JPG" width="800" alt="MorphoGear CAD model">
+</p>
 ## Capabilities
 
 MorphoGear is designed to investigate multimodal robotic operation, including:
@@ -181,6 +187,10 @@ After adding the image, uncomment:
 </p>
 -->
 
+<p align="center">
+  <img src="images/Interface.png" width="800" alt="MorphoGear Unity simulation">
+</p>
+
 ### 3. Build the current ROS 2 node
 
 Source your ROS 2 installation:
@@ -286,6 +296,10 @@ After adding the image, uncomment:
 </p>
 -->
 
+<p align="center">
+  <img src="images/collage.png" width="800" alt="MorphoGear experiment">
+</p>
+
 ## Development Notes
 
 - `ROS2/Current/` contains the current controller implementation.
@@ -357,7 +371,7 @@ If you use MorphoGear in academic work, please cite:
 > M. Martynov, Z. Darush, A. Fedoseev, and D. Tsetserukou,  
 > “MorphoGear: An UAV with Multi-Limb Morphogenetic Gear for Rough-Terrain Locomotion,”  
 > in *2023 IEEE/ASME International Conference on Advanced Intelligent Mechatronics (AIM)*, 2023, pp. 11–16.  
-> [arXiv:2403.08340](https://arxiv.org/abs/2403.08340)
+> [10.1109/AIM46323.2023.10196115](https://doi.org/10.1109/AIM46323.2023.10196115)
 
 ### BibTeX
 
@@ -371,7 +385,7 @@ If you use MorphoGear in academic work, please cite:
                Advanced Intelligent Mechatronics (AIM)},
   year      = {2023},
   pages     = {11--16},
-  url       = {https://arxiv.org/abs/2403.08340}
+  url       = {https://doi.org/10.1109/AIM46323.2023.10196115}
 }
 ```
 
