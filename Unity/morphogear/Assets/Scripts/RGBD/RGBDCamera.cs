@@ -61,51 +61,71 @@ public class RGBDCamera : MonoBehaviour
         _pointCloudCompute.SetFloats("resolution", new float[] { _resolution.x, _resolution.y });
     }
 
-    private void OnEnable()
-    {
-        _isRunning = true;
-        //_ = StartSensorSequenceAsync();
-    }
-
-    //private async Awaitable StartSensorSequenceAsync()
+    //private void OnEnable()
     //{
-    //    // Stagger the start time so 10 agents don't crash the network
-    //    float staggerDelay = UnityEngine.Random.Range(0f, 1.0f / _frequency);
-    //    await Awaitable.WaitForSecondsAsync(staggerDelay);
-
-    //    if (!_isRunning) return; // Stop if disabled during wait
-    //    await SensorLoopAsync();
+    //    _isRunning = true;
+    //    //_ = StartSensorSequenceAsync();
     //}
 
-    //private async Awaitable SensorLoopAsync()
-    //{
-    //    float frequencyInv = 1.0f / _frequency;
-    //    float timer = 0f;
 
-    //    while (_isRunning && this != null)
+
+    //bool flag = true;
+    //async void LateUpdate()
+    //{
+    //    if (flag)
     //    {
-    //        timer += Time.deltaTime;
-    //        if (timer >= frequencyInv)
-    //        {
-    //            await CaptureAndComputeAsync();
-    //            timer = 0f;
-    //        }
-    //        if (_isRunning) await Awaitable.NextFrameAsync();
+    //        flag = !flag;
+    //        return;
+    //    }
+    //    else
+    //    {
+    //        CaptureAndComputeAsync();
+    //        flag = !flag;
     //    }
     //}
 
-    bool flag = true;
-    async void LateUpdate()
+    private bool _captureInFlight;
+    private float _nextCaptureTime;
+
+    public Vector2Int Resolution => _resolution;
+
+    private void OnEnable()
     {
-        if (flag)
-        {
-            flag = !flag;
+        _isRunning = true;
+        _nextCaptureTime = Time.realtimeSinceStartup;
+    }
+
+    private void LateUpdate()
+    {
+        if (!_isRunning || _captureInFlight)
             return;
-        }
-        else
+
+        float now = Time.realtimeSinceStartup;
+        if (now < _nextCaptureTime)
+            return;
+
+        // Schedule from now: missed captures are dropped, not caught up later.
+        _nextCaptureTime = now + 1f / Mathf.Max(0.1f, _frequency);
+        _ = CaptureGuardedAsync();
+    }
+
+    private async Awaitable CaptureGuardedAsync()
+    {
+        _captureInFlight = true;
+
+        try
         {
-            CaptureAndComputeAsync();
-            flag = !flag;
+            await CaptureAndComputeAsync();
+        }
+        catch (Exception exception)
+        {
+            if (_isRunning)
+                Debug.LogWarning(
+                    $"Depth capture failed: {exception.Message}", this);
+        }
+        finally
+        {
+            _captureInFlight = false;
         }
     }
 

@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -17,58 +18,114 @@ namespace RobotRuntime
     {
         public static GameManager Instance { get; private set; }
 
-        [Header("Startup")]
-        [SerializeField] private RobotMode startingMode = RobotMode.Game;
-        [SerializeField] private bool applyStartingModeOnStart = true;
-        [SerializeField] private bool pauseGameWhileMenuIsOpen = true;
-        [SerializeField] private bool persistBetweenScenes;
+        [Header("Required references")]
+        [SerializeField]
+        private UnifiedKeyboardController keyboardController;
 
-        [Header("Mode Profiles")]
-        [SerializeField] private List<ModeProfile> profiles = new List<ModeProfile>();
+        [SerializeField]
+        private ROSTelemetry telemetry;
+
+        [Header("Startup")]
+        [SerializeField]
+        private RobotMode startingMode = RobotMode.Game;
+
+        [SerializeField]
+        private bool pauseGameWhileMenuIsOpen = true;
+
+        [Header("Mode profiles")]
+        [SerializeField]
+        private List<ModeProfile> profiles =
+            new List<ModeProfile>();
 
         [Header("Events")]
         public UnityEvent onBeforeModeChanged;
         public UnityEvent onModeChanged;
 
         public RobotMode ActiveMode { get; private set; }
-        public bool IsMenuOpen => menuRoot != null && menuRoot.activeSelf;
         public event Action<RobotMode> ModeChanged;
 
-        private Canvas canvas;
+        public bool IsMenuOpen =>
+            menuRoot != null && menuRoot.activeSelf;
+
         private GameObject menuRoot;
-        private RectTransform tabRow;
+        private RectTransform tabRoot;
         private RectTransform settingsRoot;
+
         private Text titleText;
         private Text descriptionText;
         private Text statusText;
-        private Button applyButton;
-        private readonly List<Button> tabs = new List<Button>();
-        private readonly List<GameObject> spawnedModeObjects = new List<GameObject>();
-        private readonly Dictionary<MemberOverride, string> pendingValues = new Dictionary<MemberOverride, string>();
-        private RobotMode selectedMode;
-        private float timeScaleBeforeMenu = 1f;
-        private Font builtInFont;
+        private Text errorText;
 
-        private static readonly Color Navy = new Color32(12, 17, 27, 247);
-        private static readonly Color Panel = new Color32(22, 29, 43, 255);
-        private static readonly Color PanelLight = new Color32(31, 40, 57, 255);
-        private static readonly Color Muted = new Color32(148, 160, 180, 255);
-        private static readonly Color White = new Color32(239, 244, 252, 255);
+        private Font font;
+        private RobotMode selectedMode;
+        private float previousTimeScale = 1f;
+
+        private readonly List<GameObject> spawnedObjects =
+            new List<GameObject>();
+
+        private static readonly Color Background =
+            new Color32(12, 18, 29, 250);
+
+        private static readonly Color Panel =
+            new Color32(26, 35, 51, 255);
+
+        private static readonly Color Row =
+            new Color32(37, 48, 67, 255);
+
+        private static readonly Color White =
+            new Color32(240, 245, 252, 255);
+
+        private static readonly Color Muted =
+            new Color32(159, 173, 191, 255);
 
         private void Reset()
         {
             profiles = new List<ModeProfile>
             {
-                NewProfile(RobotMode.Game, "GAME", "Standalone Unity world. No ROS connection.", new Color32(80, 200, 255, 255)),
-                NewProfile(RobotMode.Mirror, "MIRROR", "Unity commands are mirrored by the connected robot.", new Color32(170, 105, 255, 255)),
-                NewProfile(RobotMode.Simulation, "SIMULATION", "Commands go to the robot; telemetry is supplied by Unity.", new Color32(255, 166, 72, 255)),
-                NewProfile(RobotMode.Visualisation, "VISUALISATION", "Robot actions and telemetry drive the Unity representation.", new Color32(83, 224, 156, 255))
+                MakeProfile(
+                    RobotMode.Game,
+                    "GAME",
+                    "Standalone Unity control. No robot connection.",
+                    new Color32(80, 200, 255, 255)),
+
+                MakeProfile(
+                    RobotMode.Mirror,
+                    "MIRROR",
+                    "Unity keyboard control. Send Unity joint angles to the robot.",
+                    new Color32(173, 112, 255, 255)),
+
+                MakeProfile(
+                    RobotMode.Simulation,
+                    "SIMULATION",
+                    "Robot keyboard control. Receive joints and optionally publish Unity pose.",
+                    new Color32(255, 170, 81, 255)),
+
+                MakeProfile(
+                    RobotMode.Visualisation,
+                    "VISUALISATION",
+                    "Receive robot joints. Choose a scene Transform or received robot pose for positioning.",
+                    new Color32(85, 221, 164, 255))
             };
+
+            profiles[2].showPublishPoseInMenu = true;
+
+            profiles[3].showReceivePoseInMenu = true;
+            profiles[3].showVisualisationSourceInMenu = true;
         }
 
-        private static ModeProfile NewProfile(RobotMode mode, string title, string description, Color accent)
+        private static ModeProfile MakeProfile(
+            RobotMode mode,
+            string title,
+            string description,
+            Color accent)
         {
-            return new ModeProfile { mode = mode, title = title, description = description, accent = accent };
+            return new ModeProfile
+            {
+                mode = mode,
+                title = title,
+                description = description,
+                accent = accent
+            };
         }
 
         private void Awake()
@@ -80,565 +137,1586 @@ namespace RobotRuntime
             }
 
             Instance = this;
-            if (persistBetweenScenes) DontDestroyOnLoad(gameObject);
-            EnsureProfilesExist();
-            BuildHud();
+
+            EnsureProfiles();
+
+            font = Resources.GetBuiltinResource<Font>(
+                "LegacyRuntime.ttf");
+
+            BuildMenu();
             menuRoot.SetActive(false);
         }
 
         private void Start()
         {
-            if (applyStartingModeOnStart) ApplyMode(startingMode);
-            else
-            {
-                ActiveMode = startingMode;
-                SelectMode(startingMode);
-            }
+            ApplyMode(startingMode);
         }
 
         private void Update()
         {
-            bool escapePressed;
 #if ENABLE_INPUT_SYSTEM
-            escapePressed = Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+            bool pressed =
+                Keyboard.current != null &&
+                Keyboard.current.escapeKey.wasPressedThisFrame;
 #else
-            escapePressed = Input.GetKeyDown(KeyCode.Escape);
+            bool pressed = Input.GetKeyDown(KeyCode.Escape);
 #endif
-            if (escapePressed) ToggleMenu();
+
+            if (pressed)
+                SetMenuOpen(!IsMenuOpen);
         }
 
         private void OnDestroy()
         {
-            if (Instance == this) Instance = null;
-            if (IsMenuOpen && pauseGameWhileMenuIsOpen) Time.timeScale = timeScaleBeforeMenu;
+            if (Instance == this)
+                Instance = null;
+
+            if (IsMenuOpen && pauseGameWhileMenuIsOpen)
+                Time.timeScale = previousTimeScale;
         }
 
-        public void ToggleMenu() => SetMenuOpen(!IsMenuOpen);
+        public void ToggleMenu()
+        {
+            SetMenuOpen(!IsMenuOpen);
+        }
 
         public void SetMenuOpen(bool open)
         {
-            if (menuRoot == null || menuRoot.activeSelf == open) return;
-            menuRoot.SetActive(open);
+            if (menuRoot == null ||
+                menuRoot.activeSelf == open)
+                return;
 
-            if (pauseGameWhileMenuIsOpen)
+            if (open)
             {
-                if (open)
-                {
-                    timeScaleBeforeMenu = Time.timeScale;
-                    Time.timeScale = 0f;
-                }
-                else Time.timeScale = timeScaleBeforeMenu;
+                selectedMode = ActiveMode;
+                RefreshMenu();
             }
 
-            if (open) SelectMode(ActiveMode);
+            menuRoot.SetActive(open);
+
+            if (keyboardController != null)
+                keyboardController.SetInputBlocked(open);
+
+            if (!pauseGameWhileMenuIsOpen)
+                return;
+
+            if (open)
+            {
+                previousTimeScale = Time.timeScale;
+                Time.timeScale = 0f;
+            }
+            else
+            {
+                Time.timeScale = previousTimeScale;
+            }
         }
 
         public void ApplySelectedMode()
         {
-            CommitPendingSettings(CurrentProfile());
-            ApplyMode(selectedMode);
-            SetMenuOpen(false);
-        }
+            ModeProfile profile = FindProfile(selectedMode);
 
-        public void ApplyMode(RobotMode mode)
-        {
-            ModeProfile profile = FindProfile(mode);
             if (profile == null)
+                return;
+
+            if (selectedMode == RobotMode.Visualisation &&
+                profile.visualisationSource ==
+                    TeleportPoseSource.ReceivedPoseStamped &&
+                !profile.receivePose)
             {
-                Debug.LogError($"No profile exists for mode {mode}.", this);
+                errorText.text =
+                    "Enable RECEIVE ROBOT POSE before selecting " +
+                    "ReceivedPoseStamped.";
                 return;
             }
 
+            errorText.text = "";
+
+            if (ApplyMode(selectedMode))
+                SetMenuOpen(false);
+        }
+
+        public bool ApplyMode(RobotMode mode)
+        {
+            ModeProfile profile = FindProfile(mode);
+
+            if (profile == null ||
+                keyboardController == null ||
+                telemetry == null)
+            {
+                Debug.LogError(
+                    "GameManager needs four profiles plus references " +
+                    "to UnifiedKeyboardController and ROSTelemetry.",
+                    this);
+
+                return false;
+            }
+
+            if (mode == RobotMode.Visualisation &&
+                profile.visualisationSource ==
+                    TeleportPoseSource.ReceivedPoseStamped &&
+                !profile.receivePose)
+            {
+                Debug.LogError(
+                    "ReceivedPoseStamped source requires receivePose.",
+                    this);
+
+                return false;
+            }
+
             onBeforeModeChanged?.Invoke();
+
             DestroySpawnedObjects();
-            DisableAllManagedComponents();
-            ApplySettings(profile);
-            SetProfileComponents(profile);
-            SpawnStartupPrefabs(profile);
+            DisableManagedExtensions();
+
+            // Always clear old telemetry routing first. This matters
+            // when returning to Game mode.
+            telemetry.publishJoints = false;
+            telemetry.receiveJoints = false;
+            telemetry.visualization = false;
+            telemetry.poseChannelMode = PoseChannelMode.Off;
+            telemetry.publishDepth = false;
+
+            switch (mode)
+            {
+                case RobotMode.Game:
+                    keyboardController.ConfigureManagedMode(
+                        false,
+                        KeyboardDestination.Unity,
+                        false);
+
+                    telemetry.enabled = false;
+                    break;
+
+                case RobotMode.Mirror:
+                    keyboardController.ConfigureManagedMode(
+                        true,
+                        KeyboardDestination.Unity,
+                        true);
+
+                    ConfigureTelemetry(
+                        profile,
+                        publishJoints: true,
+                        receiveJoints: false,
+                        visualisation: false,
+                        poseMode: PoseChannelMode.Off);
+
+                    // Robot receives Unity angles instead of
+                    // generating its own joint targets.
+                    keyboardController.SetManualControl(true);
+                    break;
+
+                case RobotMode.Simulation:
+                    keyboardController.ConfigureManagedMode(
+                        true,
+                        KeyboardDestination.Robot,
+                        true);
+
+                    ConfigureTelemetry(
+                        profile,
+                        publishJoints: false,
+                        receiveJoints: true,
+                        visualisation: false,
+                        poseMode: profile.publishPose
+                            ? PoseChannelMode.Publish
+                            : PoseChannelMode.Off);
+
+                    keyboardController.SetManualControl(false);
+                    break;
+
+                case RobotMode.Visualisation:
+                    keyboardController.ConfigureManagedMode(
+                        true,
+                        KeyboardDestination.Robot,
+                        false);
+
+                    ConfigureTelemetry(
+                        profile,
+                        publishJoints: false,
+                        receiveJoints: true,
+                        visualisation: true,
+                        poseMode: profile.receivePose
+                            ? PoseChannelMode.Receive
+                            : PoseChannelMode.Off);
+
+                    keyboardController.SetManualControl(false);
+                    break;
+            }
+
+            ApplyExtensionSettings(profile);
+            EnableManagedExtensions(profile);
+            SpawnPrefabs(profile);
 
             ActiveMode = mode;
             selectedMode = mode;
-            RefreshStatus();
+
+            RefreshMenu();
+
             onModeChanged?.Invoke();
             ModeChanged?.Invoke(mode);
-            Debug.Log($"Robot mode applied: {mode}", this);
+
+            Debug.Log($"Robot mode: {mode}", this);
+            return true;
         }
 
-        private void DisableAllManagedComponents()
+        private void ConfigureTelemetry(
+            ModeProfile profile,
+            bool publishJoints,
+            bool receiveJoints,
+            bool visualisation,
+            PoseChannelMode poseMode)
+        {
+            telemetry.publishJoints = publishJoints;
+            telemetry.receiveJoints = receiveJoints;
+            telemetry.visualization = visualisation;
+            telemetry.poseChannelMode = poseMode;
+
+            telemetry.teleportPoseSource =
+                profile.visualisationSource;
+
+            telemetry.publishDepth = profile.publishDepth;
+            telemetry.enabled = true;
+        }
+
+        private void EnsureProfiles()
+        {
+            if (profiles == null)
+                profiles = new List<ModeProfile>();
+
+            foreach (RobotMode mode in
+                Enum.GetValues(typeof(RobotMode)))
+            {
+                if (FindProfile(mode) == null)
+                {
+                    profiles.Add(MakeProfile(
+                        mode,
+                        mode.ToString().ToUpperInvariant(),
+                        "Configure this profile in the Inspector.",
+                        Color.cyan));
+                }
+            }
+        }
+
+        private ModeProfile FindProfile(RobotMode mode)
+        {
+            return profiles.Find(
+                p => p != null && p.mode == mode);
+        }
+
+        private void DisableManagedExtensions()
         {
             var visited = new HashSet<Behaviour>();
+
             foreach (ModeProfile profile in profiles)
-                foreach (ComponentToggle toggle in profile.sceneComponents)
-                    if (toggle != null && toggle.component != null && visited.Add(toggle.component))
-                        toggle.component.enabled = false;
+            {
+                if (profile == null)
+                    continue;
+
+                foreach (ComponentToggle item in
+                    profile.sceneComponents)
+                {
+                    if (item == null ||
+                        item.component == null ||
+                        !visited.Add(item.component))
+                        continue;
+
+                    // These are managed by ApplyMode itself.
+                    if (item.component == keyboardController ||
+                        item.component == telemetry)
+                        continue;
+
+                    item.component.enabled = false;
+                }
+            }
         }
 
-        private void SetProfileComponents(ModeProfile profile)
+        private void EnableManagedExtensions(ModeProfile profile)
         {
-            foreach (ComponentToggle toggle in profile.sceneComponents)
-                if (toggle != null && toggle.component != null)
-                    toggle.component.enabled = toggle.enabled;
+            foreach (ComponentToggle item in
+                profile.sceneComponents)
+            {
+                if (item == null ||
+                    item.component == null ||
+                    item.component == keyboardController ||
+                    item.component == telemetry)
+                    continue;
+
+                item.component.enabled = item.enabled;
+            }
         }
 
-        private void ApplySettings(ModeProfile profile)
+        private void ApplyExtensionSettings(ModeProfile profile)
         {
+            const BindingFlags flags =
+                BindingFlags.Instance | BindingFlags.Public;
+
             foreach (MemberOverride setting in profile.settings)
             {
-                if (setting == null || setting.target == null || string.IsNullOrWhiteSpace(setting.memberName)) continue;
-                object value = GetOverrideValue(setting);
+                if (setting == null ||
+                    setting.target == null ||
+                    string.IsNullOrWhiteSpace(setting.memberName))
+                    continue;
+
+                // Do not allow a generic override to undo core routing.
+                if (IsProtectedRoutingMember(setting))
+                {
+                    Debug.LogWarning(
+                        $"Routing member '{setting.memberName}' is " +
+                        "controlled by GameManager; override skipped.",
+                        setting.target);
+
+                    continue;
+                }
+
                 Type type = setting.target.GetType();
-                FieldInfo field = type.GetField(setting.memberName, BindingFlags.Instance | BindingFlags.Public);
-                PropertyInfo property = type.GetProperty(setting.memberName, BindingFlags.Instance | BindingFlags.Public);
+
+                FieldInfo field =
+                    type.GetField(setting.memberName, flags);
+
+                PropertyInfo property =
+                    type.GetProperty(setting.memberName, flags);
+
+                Type destination =
+                    field != null
+                        ? field.FieldType
+                        : property != null && property.CanWrite
+                            ? property.PropertyType
+                            : null;
+
+                if (destination == null)
+                {
+                    Debug.LogWarning(
+                        $"No writable public member " +
+                        $"{type.Name}.{setting.memberName}.",
+                        setting.target);
+
+                    continue;
+                }
 
                 try
                 {
-                    if (field != null) field.SetValue(setting.target, ConvertValue(value, field.FieldType));
-                    else if (property != null && property.CanWrite) property.SetValue(setting.target, ConvertValue(value, property.PropertyType));
-                    else Debug.LogWarning($"Public field/property '{setting.memberName}' was not found on {type.Name}.", setting.target);
+                    object value =
+                        ConvertSetting(setting, destination);
+
+                    if (field != null)
+                        field.SetValue(setting.target, value);
+                    else
+                        property.SetValue(setting.target, value);
                 }
-                catch (Exception exception)
+                catch (Exception ex)
                 {
-                    Debug.LogError($"Could not apply {type.Name}.{setting.memberName}: {exception.Message}", setting.target);
+                    Debug.LogError(
+                        $"Failed to apply {type.Name}." +
+                        $"{setting.memberName}: {ex.Message}",
+                        setting.target);
                 }
             }
         }
 
-        private static object GetOverrideValue(MemberOverride setting)
+        private bool IsProtectedRoutingMember(
+            MemberOverride setting)
         {
+            if (setting.target == keyboardController)
+            {
+                return setting.memberName ==
+                           "CurrentDestination";
+            }
+
+            if (setting.target != telemetry)
+                return false;
+
+            return setting.memberName == "publishJoints" ||
+                   setting.memberName == "receiveJoints" ||
+                   setting.memberName == "visualization" ||
+                   setting.memberName == "poseChannelMode" ||
+                   setting.memberName == "teleportPoseSource" ||
+                   setting.memberName == "publishDepth";
+        }
+
+        private static object ConvertSetting(
+            MemberOverride setting,
+            Type destination)
+        {
+            if (destination.IsEnum)
+                return Enum.Parse(
+                    destination,
+                    setting.stringValue,
+                    true);
+
+            object value;
+
             switch (setting.valueType)
             {
-                case OverrideValueType.Boolean: return setting.boolValue;
-                case OverrideValueType.Integer: return setting.intValue;
-                case OverrideValueType.Float: return setting.floatValue;
-                case OverrideValueType.String: return setting.stringValue;
-                case OverrideValueType.Vector3: return setting.vector3Value;
-                case OverrideValueType.Color: return setting.colorValue;
-                default: return null;
+                case OverrideValueType.Boolean:
+                    value = setting.boolValue;
+                    break;
+
+                case OverrideValueType.Integer:
+                    value = setting.intValue;
+                    break;
+
+                case OverrideValueType.Float:
+                    value = setting.floatValue;
+                    break;
+
+                case OverrideValueType.Vector3:
+                    value = setting.vector3Value;
+                    break;
+
+                case OverrideValueType.Color:
+                    value = setting.colorValue;
+                    break;
+
+                default:
+                    value = setting.stringValue;
+                    break;
             }
+
+            if (destination.IsInstanceOfType(value))
+                return value;
+
+            return Convert.ChangeType(
+                value,
+                destination,
+                CultureInfo.InvariantCulture);
         }
 
-        private static object ConvertValue(object value, Type destination)
+        private void SpawnPrefabs(ModeProfile profile)
         {
-            if (value == null || destination.IsInstanceOfType(value)) return value;
-            if (destination.IsEnum) return Enum.Parse(destination, value.ToString(), true);
-            return Convert.ChangeType(value, destination, CultureInfo.InvariantCulture);
-        }
-
-        private void SpawnStartupPrefabs(ModeProfile profile)
-        {
-            foreach (GameObject prefab in profile.startupPrefabs)
+            foreach (GameObject prefab in
+                profile.startupPrefabs)
             {
-                if (prefab == null) continue;
-                GameObject instance = Instantiate(prefab, transform);
-                instance.name = $"[Mode {profile.mode}] {prefab.name}";
-                spawnedModeObjects.Add(instance);
-                foreach (MonoBehaviour behaviour in instance.GetComponentsInChildren<MonoBehaviour>(true))
-                    if (behaviour is IModeInitializable initializable)
-                        initializable.InitializeForMode(profile.mode, this);
+                if (prefab == null)
+                    continue;
+
+                GameObject instance =
+                    Instantiate(prefab, transform);
+
+                spawnedObjects.Add(instance);
+
+                foreach (MonoBehaviour behaviour in
+                    instance.GetComponentsInChildren
+                        <MonoBehaviour>(true))
+                {
+                    if (behaviour is IModeInitializable hook)
+                        hook.InitializeForMode(
+                            profile.mode,
+                            this);
+                }
             }
         }
 
         private void DestroySpawnedObjects()
         {
-            foreach (GameObject item in spawnedModeObjects)
-                if (item != null) Destroy(item);
-            spawnedModeObjects.Clear();
+            foreach (GameObject item in spawnedObjects)
+            {
+                if (item != null)
+                    Destroy(item);
+            }
+
+            spawnedObjects.Clear();
         }
 
-        private void EnsureProfilesExist()
-        {
-            foreach (RobotMode mode in Enum.GetValues(typeof(RobotMode)))
-                if (FindProfile(mode) == null)
-                    profiles.Add(NewProfile(mode, mode.ToString().ToUpperInvariant(), "Configure this mode in the GameManager Inspector.", Color.cyan));
-        }
+        // ----------------------------------------------------------
+        // Runtime menu
+        // ----------------------------------------------------------
 
-        private ModeProfile FindProfile(RobotMode mode) => profiles.Find(profile => profile != null && profile.mode == mode);
-        private ModeProfile CurrentProfile() => FindProfile(selectedMode);
+        //private void BuildMenu()
+        //{
+        //    EnsureEventSystem();
 
-        // ---------------- Runtime-generated uGUI ----------------
-        private void BuildHud()
+        //    GameObject canvasObject =
+        //        NewUI("Robot Mode Canvas", transform);
+
+        //    Canvas canvas =
+        //        canvasObject.AddComponent<Canvas>();
+
+        //    canvas.renderMode =
+        //        RenderMode.ScreenSpaceOverlay;
+
+        //    canvas.sortingOrder = 500;
+
+        //    canvasObject.AddComponent<GraphicRaycaster>();
+
+        //    CanvasScaler scaler =
+        //        canvasObject.AddComponent<CanvasScaler>();
+
+        //    scaler.uiScaleMode =
+        //        CanvasScaler.ScaleMode.ScaleWithScreenSize;
+
+        //    scaler.referenceResolution =
+        //        new Vector2(1920, 1080);
+
+        //    menuRoot =
+        //        PanelObject("Menu", canvasObject.transform,
+        //            new Color(0f, 0f, 0f, 0.78f));
+
+        //    Stretch(menuRoot.GetComponent<RectTransform>());
+
+        //    GameObject shell =
+        //        PanelObject("Shell", menuRoot.transform,
+        //            Background);
+
+        //    RectTransform shellRect =
+        //        shell.GetComponent<RectTransform>();
+
+        //    shellRect.anchorMin =
+        //        shellRect.anchorMax =
+        //            new Vector2(0.5f, 0.5f);
+
+        //    shellRect.sizeDelta =
+        //        new Vector2(1080f, 720f);
+
+        //    VerticalLayoutGroup shellLayout =
+        //        shell.AddComponent<VerticalLayoutGroup>();
+
+        //    shellLayout.padding =
+        //        new RectOffset(34, 34, 28, 28);
+
+        //    shellLayout.spacing = 15;
+        //    shellLayout.childForceExpandHeight = false;
+
+        //    AddText(shell.transform, "ROBOT RUNTIME", 30, White)
+        //        .gameObject
+        //        .AddComponent<LayoutElement>()
+        //        .preferredHeight = 48;
+
+        //    GameObject tabs =
+        //        NewUI("Mode Tabs", shell.transform);
+
+        //    tabs.AddComponent<LayoutElement>()
+        //        .preferredHeight = 28;
+
+        //    tabRoot =
+        //        tabs.GetComponent<RectTransform>();
+
+        //    HorizontalLayoutGroup tabLayout =
+        //        tabs.AddComponent<HorizontalLayoutGroup>();
+
+        //    tabLayout.spacing = 9;
+        //    tabLayout.childControlWidth = true;
+        //    tabLayout.childForceExpandWidth = true;
+        //    tabLayout.childControlHeight = true;
+
+        //    foreach (RobotMode mode in
+        //        Enum.GetValues(typeof(RobotMode)))
+        //    {
+        //        RobotMode selected = mode;
+
+        //        AddButton(
+        //            tabRoot,
+        //            FindProfile(mode).title,
+        //            () =>
+        //            {
+        //                selectedMode = selected;
+        //                RefreshMenu();
+        //            });
+        //    }
+
+        //    GameObject info =
+        //        PanelObject(
+        //            "Mode Description",
+        //            shell.transform,
+        //            Panel);
+
+        //    info.AddComponent<LayoutElement>()
+        //        .preferredHeight = 70;
+
+        //    VerticalLayoutGroup infoLayout =
+        //        info.AddComponent<VerticalLayoutGroup>();
+
+        //    infoLayout.padding =
+        //        new RectOffset(18, 18, 12, 12);
+
+        //    infoLayout.childForceExpandHeight = false;
+
+        //    titleText =
+        //        AddText(info.transform, "", 26, White);
+
+        //    titleText.gameObject
+        //        .AddComponent<LayoutElement>()
+        //        .preferredHeight = 40;
+
+        //    descriptionText =
+        //        AddText(info.transform, "", 17, Muted);
+
+        //    descriptionText.gameObject
+        //        .AddComponent<LayoutElement>()
+        //        .preferredHeight = 53;
+
+        //    statusText =
+        //        AddText(info.transform, "", 15, White);
+
+        //    statusText.gameObject
+        //        .AddComponent<LayoutElement>()
+        //        .preferredHeight = 25;
+
+        //    GameObject scrollObject =
+        //        PanelObject(
+        //            "Settings Panel",
+        //            shell.transform,
+        //            Panel);
+
+        //    scrollObject.AddComponent<LayoutElement>()
+        //        .flexibleHeight = 1;
+
+        //    ScrollRect scroll =
+        //        scrollObject.AddComponent<ScrollRect>();
+
+        //    scroll.horizontal = false;
+
+        //    GameObject viewport =
+        //        NewUI("Viewport", scrollObject.transform);
+
+        //    Stretch(viewport.GetComponent<RectTransform>());
+
+        //    viewport.AddComponent<RectMask2D>();
+
+        //    GameObject content =
+        //        NewUI("Settings", viewport.transform);
+
+        //    settingsRoot =
+        //        content.GetComponent<RectTransform>();
+
+        //    settingsRoot.anchorMin =
+        //        new Vector2(0f, 1f);
+
+        //    settingsRoot.anchorMax =
+        //        new Vector2(1f, 1f);
+
+        //    settingsRoot.pivot =
+        //        new Vector2(0.5f, 1f);
+
+        //    settingsRoot.sizeDelta = Vector2.zero;
+
+        //    VerticalLayoutGroup settingsLayout =
+        //        content.AddComponent<VerticalLayoutGroup>();
+
+        //    settingsLayout.padding =
+        //        new RectOffset(18, 18, 16, 16);
+
+        //    settingsLayout.spacing = 9;
+        //    settingsLayout.childForceExpandHeight = false;
+
+        //    ContentSizeFitter fitter =
+        //        content.AddComponent<ContentSizeFitter>();
+
+        //    fitter.verticalFit =
+        //        ContentSizeFitter.FitMode.PreferredSize;
+
+        //    scroll.viewport =
+        //        viewport.GetComponent<RectTransform>();
+
+        //    scroll.content = settingsRoot;
+
+        //    errorText =
+        //        AddText(
+        //            shell.transform,
+        //            "",
+        //            15,
+        //            new Color32(255, 125, 125, 255));
+
+        //    errorText.gameObject
+        //        .AddComponent<LayoutElement>()
+        //        .preferredHeight = 24;
+
+        //    GameObject footer =
+        //        NewUI("Footer", shell.transform);
+
+        //    footer.AddComponent<LayoutElement>()
+        //        .preferredHeight = 54;
+
+        //    HorizontalLayoutGroup footerLayout =
+        //        footer.AddComponent<HorizontalLayoutGroup>();
+
+        //    footerLayout.spacing = 12;
+        //    footerLayout.childControlWidth = true;
+        //    footerLayout.childForceExpandWidth = true;
+        //    footerLayout.childControlHeight = true;
+
+        //    AddButton(
+        //        footer.transform,
+        //        "CANCEL",
+        //        () => SetMenuOpen(false));
+
+        //    AddButton(
+        //        footer.transform,
+        //        "APPLY MODE",
+        //        ApplySelectedMode);
+        //}
+
+        private void BuildMenu()
         {
-            builtInFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             EnsureEventSystem();
 
-            GameObject canvasObject = NewUi("Robot Mode HUD", transform);
-            canvas = canvasObject.AddComponent<Canvas>();
+            GameObject canvasObject =
+                NewUI("Robot Mode Canvas", transform);
+
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 500;
+
             canvasObject.AddComponent<GraphicRaycaster>();
-            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+
+            CanvasScaler scaler =
+                canvasObject.AddComponent<CanvasScaler>();
+
+            scaler.uiScaleMode =
+                CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
 
-            menuRoot = NewUi("Menu", canvasObject.transform);
+            menuRoot = PanelObject(
+                "Menu",
+                canvasObject.transform,
+                new Color(0f, 0f, 0f, 0.78f));
+
             Stretch(menuRoot.GetComponent<RectTransform>());
-            Image dim = menuRoot.AddComponent<Image>();
-            dim.color = new Color(0.01f, 0.015f, 0.025f, 0.74f);
 
-            GameObject shell = PanelObject("Shell", menuRoot.transform, Navy);
-            RectTransform shellRect = shell.GetComponent<RectTransform>();
+            // Main centered window
+            GameObject shell =
+                PanelObject("Shell", menuRoot.transform, Background);
+
+            RectTransform shellRect =
+                shell.GetComponent<RectTransform>();
+
             shellRect.anchorMin = new Vector2(0.5f, 0.5f);
             shellRect.anchorMax = new Vector2(0.5f, 0.5f);
             shellRect.pivot = new Vector2(0.5f, 0.5f);
-            shellRect.sizeDelta = new Vector2(1120f, 700f);
-            Shadow shadow = shell.AddComponent<Shadow>();
-            shadow.effectColor = new Color(0, 0, 0, 0.65f);
-            shadow.effectDistance = new Vector2(0, -14);
+            shellRect.sizeDelta = new Vector2(1080f, 650f);
 
-            VerticalLayoutGroup shellLayout = shell.AddComponent<VerticalLayoutGroup>();
-            shellLayout.padding = new RectOffset(48, 48, 36, 36);
-            shellLayout.spacing = 22;
+            VerticalLayoutGroup shellLayout =
+                shell.AddComponent<VerticalLayoutGroup>();
+
+            shellLayout.padding = new RectOffset(28, 28, 22, 22);
+            shellLayout.spacing = 12;
             shellLayout.childControlHeight = true;
             shellLayout.childForceExpandHeight = false;
 
-            GameObject header = NewUi("Header", shell.transform);
-            header.AddComponent<LayoutElement>().preferredHeight = 78;
-            HorizontalLayoutGroup headerLayout = header.AddComponent<HorizontalLayoutGroup>();
-            headerLayout.childAlignment = TextAnchor.MiddleLeft;
-            headerLayout.childForceExpandWidth = false;
-            headerLayout.spacing = 20;
+            // Title
+            AddText(shell.transform, "ROBOT RUNTIME", 28, White)
+                .gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 40;
 
-            GameObject headerCopy = NewUi("Header Copy", header.transform);
-            headerCopy.AddComponent<LayoutElement>().flexibleWidth = 1;
-            VerticalLayoutGroup headerCopyLayout = headerCopy.AddComponent<VerticalLayoutGroup>();
-            headerCopyLayout.childForceExpandHeight = false;
-            AddText(headerCopy.transform, "SYSTEM CONTROL", 14, Muted, FontStyle.Bold).gameObject.AddComponent<LayoutElement>().preferredHeight = 22;
-            AddText(headerCopy.transform, "ROBOT RUNTIME", 32, White, FontStyle.Bold).gameObject.AddComponent<LayoutElement>().preferredHeight = 46;
+            // Compact mode buttons
+            GameObject tabs = NewUI("Mode Tabs", shell.transform);
 
-            Button close = AddButton(header.transform, "ESC   CLOSE", Muted, () => SetMenuOpen(false));
-            close.gameObject.AddComponent<LayoutElement>().preferredWidth = 150;
+            tabs.AddComponent<LayoutElement>()
+                .preferredHeight = 40;
 
-            GameObject divider = PanelObject("Accent Line", shell.transform, new Color32(39, 49, 68, 255));
-            divider.AddComponent<LayoutElement>().preferredHeight = 2;
+            tabRoot = tabs.GetComponent<RectTransform>();
 
-            GameObject tabsObject = NewUi("Mode Tabs", shell.transform);
-            tabsObject.AddComponent<LayoutElement>().preferredHeight = 62;
-            tabRow = tabsObject.GetComponent<RectTransform>();
-            HorizontalLayoutGroup tabsLayout = tabsObject.AddComponent<HorizontalLayoutGroup>();
-            tabsLayout.spacing = 10;
-            tabsLayout.childForceExpandWidth = true;
-            tabsLayout.childControlWidth = true;
-            tabsLayout.childControlHeight = true;
+            HorizontalLayoutGroup tabLayout =
+                tabs.AddComponent<HorizontalLayoutGroup>();
 
-            foreach (RobotMode mode in Enum.GetValues(typeof(RobotMode)))
+            tabLayout.spacing = 8;
+            tabLayout.childControlWidth = true;
+            tabLayout.childForceExpandWidth = true;
+            tabLayout.childControlHeight = true;
+            tabLayout.childForceExpandHeight = true;
+
+            foreach (RobotMode mode in
+                Enum.GetValues(typeof(RobotMode)))
             {
                 RobotMode capturedMode = mode;
-                ModeProfile profile = FindProfile(mode);
-                Button tab = AddButton(tabRow, profile.title, profile.accent, () => SelectMode(capturedMode));
-                tabs.Add(tab);
+
+                AddButton(
+                    tabRoot,
+                    FindProfile(mode).title,
+                    () =>
+                    {
+                        selectedMode = capturedMode;
+                        RefreshMenu();
+                    });
             }
 
-            GameObject body = NewUi("Body", shell.transform);
-            body.AddComponent<LayoutElement>().flexibleHeight = 1;
-            HorizontalLayoutGroup bodyLayout = body.AddComponent<HorizontalLayoutGroup>();
-            bodyLayout.spacing = 24;
-            bodyLayout.childControlHeight = true;
-            bodyLayout.childForceExpandHeight = true;
+            // Body: information LEFT, scrollable settings RIGHT
+            GameObject body = NewUI("Body", shell.transform);
+
+            body.AddComponent<LayoutElement>()
+                .flexibleHeight = 1;
+
+            HorizontalLayoutGroup bodyLayout =
+                body.AddComponent<HorizontalLayoutGroup>();
+
+            bodyLayout.spacing = 16;
             bodyLayout.childControlWidth = true;
+            bodyLayout.childControlHeight = true;
+            bodyLayout.childForceExpandWidth = false;
+            bodyLayout.childForceExpandHeight = true;
 
-            GameObject info = PanelObject("Mode Information", body.transform, Panel);
-            info.AddComponent<LayoutElement>().preferredWidth = 400;
-            VerticalLayoutGroup infoLayout = info.AddComponent<VerticalLayoutGroup>();
-            infoLayout.padding = new RectOffset(28, 28, 28, 28);
-            infoLayout.spacing = 14;
+            // LEFT: mode information
+            GameObject info =
+                PanelObject("Mode Information", body.transform, Panel);
+
+            info.AddComponent<LayoutElement>()
+                .preferredWidth = 345;
+
+            VerticalLayoutGroup infoLayout =
+                info.AddComponent<VerticalLayoutGroup>();
+
+            infoLayout.padding =
+                new RectOffset(20, 20, 18, 18);
+
+            infoLayout.spacing = 12;
+            infoLayout.childControlHeight = true;
             infoLayout.childForceExpandHeight = false;
-            titleText = AddText(info.transform, "MODE", 28, White, FontStyle.Bold);
-            titleText.gameObject.AddComponent<LayoutElement>().preferredHeight = 44;
-            descriptionText = AddText(info.transform, "Description", 18, Muted, FontStyle.Normal);
-            descriptionText.gameObject.AddComponent<LayoutElement>().preferredHeight = 112;
-            statusText = AddText(info.transform, "● ACTIVE", 15, Color.green, FontStyle.Bold);
-            statusText.gameObject.AddComponent<LayoutElement>().preferredHeight = 30;
-            GameObject spacer = NewUi("Spacer", info.transform);
-            spacer.AddComponent<LayoutElement>().flexibleHeight = 1;
-            Text hint = AddText(info.transform, "Changes take effect when APPLY MODE is pressed.", 14, Muted, FontStyle.Italic);
-            hint.gameObject.AddComponent<LayoutElement>().preferredHeight = 48;
 
-            GameObject settings = PanelObject("Settings Panel", body.transform, Panel);
-            settings.AddComponent<LayoutElement>().flexibleWidth = 1;
-            VerticalLayoutGroup settingsLayout = settings.AddComponent<VerticalLayoutGroup>();
-            settingsLayout.padding = new RectOffset(28, 28, 24, 24);
-            settingsLayout.spacing = 12;
-            settingsLayout.childForceExpandHeight = false;
-            Text settingsTitle = AddText(settings.transform, "MODE SETTINGS", 17, White, FontStyle.Bold);
-            settingsTitle.gameObject.AddComponent<LayoutElement>().preferredHeight = 30;
+            titleText =
+                AddText(info.transform, "", 26, White);
 
-            GameObject scrollObject = NewUi("Settings Scroll", settings.transform);
-            scrollObject.AddComponent<LayoutElement>().flexibleHeight = 1;
-            ScrollRect scroll = scrollObject.AddComponent<ScrollRect>();
+            titleText.gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 42;
+
+            descriptionText =
+                AddText(info.transform, "", 17, Muted);
+
+            descriptionText.horizontalOverflow =
+                HorizontalWrapMode.Wrap;
+
+            descriptionText.verticalOverflow =
+                VerticalWrapMode.Overflow;
+
+            descriptionText.gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 130;
+
+            statusText =
+                AddText(info.transform, "", 15, White);
+
+            statusText.gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 32;
+
+            // RIGHT: scrollable options
+            GameObject settingsPanel =
+                PanelObject("Settings Panel", body.transform, Panel);
+
+            settingsPanel.AddComponent<LayoutElement>()
+                .flexibleWidth = 1;
+
+            VerticalLayoutGroup panelLayout =
+                settingsPanel.AddComponent<VerticalLayoutGroup>();
+
+            panelLayout.padding =
+                new RectOffset(14, 14, 14, 14);
+
+            panelLayout.spacing = 10;
+            panelLayout.childControlHeight = true;
+            panelLayout.childForceExpandHeight = false;
+
+            AddText(settingsPanel.transform, "MODE SETTINGS", 17, White)
+                .gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 30;
+
+            GameObject scrollObject =
+                NewUI("Settings Scroll", settingsPanel.transform);
+
+            scrollObject.AddComponent<LayoutElement>()
+                .flexibleHeight = 1;
+
+            ScrollRect scroll =
+                scrollObject.AddComponent<ScrollRect>();
+
             scroll.horizontal = false;
+            scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
-            GameObject viewport = PanelObject("Viewport", scrollObject.transform, new Color(0, 0, 0, 0));
+
+            GameObject viewport =
+                NewUI("Viewport", scrollObject.transform);
+
             Stretch(viewport.GetComponent<RectTransform>());
             viewport.AddComponent<RectMask2D>();
-            GameObject content = NewUi("Content", viewport.transform);
+
+            GameObject content =
+                NewUI("Settings", viewport.transform);
+
             settingsRoot = content.GetComponent<RectTransform>();
-            settingsRoot.anchorMin = new Vector2(0, 1);
-            settingsRoot.anchorMax = new Vector2(1, 1);
-            settingsRoot.pivot = new Vector2(0.5f, 1);
+
+            settingsRoot.anchorMin = new Vector2(0f, 1f);
+            settingsRoot.anchorMax = new Vector2(1f, 1f);
+            settingsRoot.pivot = new Vector2(0.5f, 1f);
             settingsRoot.sizeDelta = Vector2.zero;
-            VerticalLayoutGroup contentLayout = content.AddComponent<VerticalLayoutGroup>();
-            contentLayout.spacing = 10;
-            contentLayout.childControlHeight = true;
-            contentLayout.childForceExpandHeight = false;
-            ContentSizeFitter fitter = content.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            scroll.viewport = viewport.GetComponent<RectTransform>();
+
+            VerticalLayoutGroup settingsLayout =
+                content.AddComponent<VerticalLayoutGroup>();
+
+            settingsLayout.padding =
+                new RectOffset(4, 4, 4, 4);
+
+            settingsLayout.spacing = 9;
+            settingsLayout.childControlHeight = true;
+            settingsLayout.childForceExpandHeight = false;
+
+            ContentSizeFitter fitter =
+                content.AddComponent<ContentSizeFitter>();
+
+            fitter.verticalFit =
+                ContentSizeFitter.FitMode.PreferredSize;
+
+            scroll.viewport =
+                viewport.GetComponent<RectTransform>();
+
             scroll.content = settingsRoot;
 
-            GameObject footer = NewUi("Footer", shell.transform);
-            footer.AddComponent<LayoutElement>().preferredHeight = 60;
-            HorizontalLayoutGroup footerLayout = footer.AddComponent<HorizontalLayoutGroup>();
-            footerLayout.spacing = 14;
+            // Validation messages
+            errorText =
+                AddText(
+                    shell.transform,
+                    "",
+                    14,
+                    new Color32(255, 125, 125, 255));
+
+            errorText.gameObject
+                .AddComponent<LayoutElement>()
+                .preferredHeight = 22;
+
+            // Compact Cancel / Apply buttons
+            GameObject footer =
+                NewUI("Footer", shell.transform);
+
+            footer.AddComponent<LayoutElement>()
+                .preferredHeight = 40;
+
+            HorizontalLayoutGroup footerLayout =
+                footer.AddComponent<HorizontalLayoutGroup>();
+
+            footerLayout.spacing = 10;
+            footerLayout.childControlWidth = true;
+            footerLayout.childControlHeight = true;
+            footerLayout.childForceExpandWidth = false;
+            footerLayout.childForceExpandHeight = true;
             footerLayout.childAlignment = TextAnchor.MiddleRight;
-            GameObject footerSpacer = NewUi("Spacer", footer.transform);
-            footerSpacer.AddComponent<LayoutElement>().flexibleWidth = 1;
-            Button cancel = AddButton(footer.transform, "CANCEL", Muted, () => SetMenuOpen(false));
-            cancel.gameObject.AddComponent<LayoutElement>().preferredWidth = 140;
-            applyButton = AddButton(footer.transform, "APPLY MODE", Color.cyan, ApplySelectedMode);
-            applyButton.gameObject.AddComponent<LayoutElement>().preferredWidth = 230;
+
+            // Spacer keeps the buttons on the right.
+            GameObject spacer = NewUI("Spacer", footer.transform);
+            spacer.AddComponent<LayoutElement>()
+                .flexibleWidth = 1;
+
+            Button cancel =
+                AddButton(
+                    footer.transform,
+                    "CANCEL",
+                    () => SetMenuOpen(false));
+
+            cancel.gameObject.AddComponent<LayoutElement>()
+                .preferredWidth = 125;
+
+            Button apply =
+                AddButton(
+                    footer.transform,
+                    "APPLY MODE",
+                    ApplySelectedMode);
+
+            apply.gameObject.AddComponent<LayoutElement>()
+                .preferredWidth = 155;
         }
 
-        private void SelectMode(RobotMode mode)
+        private void RefreshMenu()
         {
-            selectedMode = mode;
-            ModeProfile profile = FindProfile(mode);
-            if (profile == null || titleText == null) return;
+            if (menuRoot == null)
+                return;
+
+            ModeProfile profile =
+                FindProfile(selectedMode);
+
             titleText.text = profile.title;
             titleText.color = profile.accent;
-            descriptionText.text = profile.description;
-            pendingValues.Clear();
-            RebuildSettings(profile);
-            RefreshStatus();
 
-            int i = 0;
-            foreach (RobotMode ignored in Enum.GetValues(typeof(RobotMode)))
+            descriptionText.text =
+                profile.description;
+
+            statusText.text =
+                selectedMode == ActiveMode
+                    ? "● CURRENTLY ACTIVE"
+                    : $"○ SWITCH FROM {ActiveMode}";
+
+            statusText.color =
+                selectedMode == ActiveMode
+                    ? profile.accent
+                    : Muted;
+
+            int index = 0;
+
+            foreach (RobotMode mode in
+                Enum.GetValues(typeof(RobotMode)))
             {
-                Image image = tabs[i].GetComponent<Image>();
-                ModeProfile tabProfile = FindProfile((RobotMode)i);
-                image.color = (RobotMode)i == selectedMode ? WithAlpha(tabProfile.accent, 0.34f) : PanelLight;
-                tabs[i].GetComponentInChildren<Text>().color = (RobotMode)i == selectedMode ? tabProfile.accent : Muted;
-                i++;
+                Image image =
+                    tabRoot.GetChild(index)
+                        .GetComponent<Image>();
+
+                image.color =
+                    mode == selectedMode
+                        ? FindProfile(mode).accent
+                        : Row;
+
+                index++;
             }
 
-            applyButton.GetComponent<Image>().color = profile.accent;
-            applyButton.GetComponentInChildren<Text>().color = new Color32(8, 14, 22, 255);
-        }
-
-        private void RebuildSettings(ModeProfile profile)
-        {
-            for (int i = settingsRoot.childCount - 1; i >= 0; i--) Destroy(settingsRoot.GetChild(i).gameObject);
-            int shown = 0;
-            foreach (MemberOverride setting in profile.settings)
+            for (int i = settingsRoot.childCount - 1;
+                 i >= 0;
+                 i--)
             {
-                if (setting == null || !setting.showInHud) continue;
-                shown++;
-                string label = string.IsNullOrWhiteSpace(setting.displayName) ? setting.memberName : setting.displayName;
-                if (setting.valueType == OverrideValueType.Boolean) AddToggleSetting(setting, label);
-                else AddInputSetting(setting, label);
+                Destroy(
+                    settingsRoot.GetChild(i).gameObject);
             }
 
-            if (shown == 0)
+            if (selectedMode == RobotMode.Simulation &&
+                profile.showPublishPoseInMenu)
             {
-                Text empty = AddText(settingsRoot, "No runtime settings for this mode.\nAdd Member Overrides in the GameManager Inspector.", 16, Muted, FontStyle.Italic);
-                empty.gameObject.AddComponent<LayoutElement>().preferredHeight = 70;
+                AddBoolSetting(
+                    "Publish simulated pose",
+                    profile.publishPose,
+                    value => profile.publishPose = value);
             }
-        }
 
-        private void AddToggleSetting(MemberOverride setting, string label)
-        {
-            GameObject row = PanelObject(label, settingsRoot, PanelLight);
-            row.AddComponent<LayoutElement>().preferredHeight = 58;
-            HorizontalLayoutGroup layout = row.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(16, 16, 8, 8);
-            layout.childAlignment = TextAnchor.MiddleLeft;
-            Text text = AddText(row.transform, label, 16, White, FontStyle.Normal);
-            text.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1;
-            Toggle toggle = AddToggle(row.transform, setting.boolValue, setting.target != null && !string.IsNullOrWhiteSpace(setting.memberName));
-            toggle.onValueChanged.AddListener(value => pendingValues[setting] = value.ToString());
-        }
-
-        private void AddInputSetting(MemberOverride setting, string label)
-        {
-            GameObject row = PanelObject(label, settingsRoot, PanelLight);
-            row.AddComponent<LayoutElement>().preferredHeight = 68;
-            VerticalLayoutGroup layout = row.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(16, 16, 7, 7);
-            layout.spacing = 4;
-            layout.childForceExpandHeight = false;
-            Text text = AddText(row.transform, label, 13, Muted, FontStyle.Bold);
-            text.gameObject.AddComponent<LayoutElement>().preferredHeight = 18;
-            InputField input = AddInput(row.transform, OverrideToString(setting));
-            input.gameObject.AddComponent<LayoutElement>().preferredHeight = 32;
-            input.interactable = setting.target != null && !string.IsNullOrWhiteSpace(setting.memberName);
-            input.onValueChanged.AddListener(value => pendingValues[setting] = value);
-        }
-
-        private void CommitPendingSettings(ModeProfile profile)
-        {
-            foreach (KeyValuePair<MemberOverride, string> pair in pendingValues)
+            if (selectedMode == RobotMode.Visualisation)
             {
-                MemberOverride setting = pair.Key;
-                string raw = pair.Value;
-                try
+                if (profile.showReceivePoseInMenu)
                 {
-                    switch (setting.valueType)
+                    AddBoolSetting(
+                        "Receive robot pose",
+                        profile.receivePose,
+                        value => profile.receivePose = value);
+                }
+
+                if (profile.showVisualisationSourceInMenu)
+                {
+                    AddCycleSetting(
+                        "Visualisation position source",
+                        profile.visualisationSource.ToString(),
+                        () =>
+                        {
+                            profile.visualisationSource =
+                                profile.visualisationSource ==
+                                    TeleportPoseSource.PoseTransform
+                                    ? TeleportPoseSource
+                                        .ReceivedPoseStamped
+                                    : TeleportPoseSource
+                                        .PoseTransform;
+
+                            RefreshMenu();
+                        });
+                }
+            }
+
+            if (selectedMode != RobotMode.Game &&
+                profile.showPublishDepthInMenu)
+            {
+                AddBoolSetting(
+                    "Publish depth",
+                    profile.publishDepth,
+                    value => profile.publishDepth = value);
+            }
+
+            foreach (MemberOverride setting in
+                profile.settings)
+            {
+                if (setting == null ||
+                    !setting.showInHud ||
+                    IsProtectedRoutingMember(setting))
+                    continue;
+
+                AddMemberSetting(setting);
+            }
+
+            if (settingsRoot.childCount == 0)
+            {
+                AddText(
+                    settingsRoot,
+                    "No runtime settings exposed for this mode.",
+                    16,
+                    Muted)
+                    .gameObject
+                    .AddComponent<LayoutElement>()
+                    .preferredHeight = 50;
+            }
+        }
+
+        private void AddMemberSetting(
+            MemberOverride setting)
+        {
+            string label =
+                string.IsNullOrWhiteSpace(
+                    setting.displayName)
+                    ? setting.memberName
+                    : setting.displayName;
+
+            if (setting.valueType ==
+                OverrideValueType.Boolean)
+            {
+                AddBoolSetting(
+                    label,
+                    setting.boolValue,
+                    value => setting.boolValue = value);
+
+                return;
+            }
+
+            if (setting.valueType ==
+                OverrideValueType.Enum)
+            {
+                Type enumType =
+                    GetMemberType(setting);
+
+                if (enumType == null ||
+                    !enumType.IsEnum)
+                    return;
+
+                string[] values =
+                    Enum.GetNames(enumType);
+
+                if (values.Length == 0)
+                    return;
+
+                if (Array.IndexOf(
+                    values,
+                    setting.stringValue) < 0)
+                {
+                    setting.stringValue = values[0];
+                }
+
+                AddCycleSetting(
+                    label,
+                    setting.stringValue,
+                    () =>
                     {
-                        case OverrideValueType.Boolean: setting.boolValue = bool.Parse(raw); break;
-                        case OverrideValueType.Integer: setting.intValue = int.Parse(raw, CultureInfo.InvariantCulture); break;
-                        case OverrideValueType.Float: setting.floatValue = float.Parse(raw, CultureInfo.InvariantCulture); break;
-                        case OverrideValueType.String: setting.stringValue = raw; break;
-                        case OverrideValueType.Vector3: setting.vector3Value = ParseVector3(raw); break;
-                        case OverrideValueType.Color: setting.colorValue = ParseColor(raw); break;
-                    }
-                }
-                catch (Exception)
-                {
-                    Debug.LogWarning($"Invalid value '{raw}' for {setting.memberName}; keeping the previous value.", this);
-                }
+                        int current =
+                            Array.IndexOf(
+                                values,
+                                setting.stringValue);
+
+                        setting.stringValue =
+                            values[
+                                (current + 1) %
+                                values.Length];
+
+                        RefreshMenu();
+                    });
+
+                return;
             }
-            pendingValues.Clear();
+
+            string current =
+                SettingAsString(setting);
+
+            AddTextSetting(
+                label,
+                current,
+                raw => UpdateSetting(setting, raw));
         }
 
-        private static string OverrideToString(MemberOverride setting)
+        private static Type GetMemberType(
+            MemberOverride setting)
+        {
+            if (setting.target == null)
+                return null;
+
+            const BindingFlags flags =
+                BindingFlags.Instance |
+                BindingFlags.Public;
+
+            Type type = setting.target.GetType();
+
+            return type.GetField(
+                       setting.memberName,
+                       flags)?.FieldType ??
+                   type.GetProperty(
+                       setting.memberName,
+                       flags)?.PropertyType;
+        }
+
+        private static string SettingAsString(
+            MemberOverride setting)
         {
             switch (setting.valueType)
             {
-                case OverrideValueType.Integer: return setting.intValue.ToString(CultureInfo.InvariantCulture);
-                case OverrideValueType.Float: return setting.floatValue.ToString(CultureInfo.InvariantCulture);
-                case OverrideValueType.String: return setting.stringValue;
-                case OverrideValueType.Vector3: return $"{setting.vector3Value.x}, {setting.vector3Value.y}, {setting.vector3Value.z}";
-                case OverrideValueType.Color: return $"{setting.colorValue.r}, {setting.colorValue.g}, {setting.colorValue.b}, {setting.colorValue.a}";
-                default: return string.Empty;
+                case OverrideValueType.Integer:
+                    return setting.intValue.ToString(
+                        CultureInfo.InvariantCulture);
+
+                case OverrideValueType.Float:
+                    return setting.floatValue.ToString(
+                        CultureInfo.InvariantCulture);
+
+                case OverrideValueType.Vector3:
+                    return string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}, {1}, {2}",
+                        setting.vector3Value.x,
+                        setting.vector3Value.y,
+                        setting.vector3Value.z);
+
+                case OverrideValueType.Color:
+                    return string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}, {1}, {2}, {3}",
+                        setting.colorValue.r,
+                        setting.colorValue.g,
+                        setting.colorValue.b,
+                        setting.colorValue.a);
+
+                default:
+                    return setting.stringValue ?? "";
             }
         }
 
-        private static Vector3 ParseVector3(string raw)
+        private void UpdateSetting(
+            MemberOverride setting,
+            string raw)
         {
-            string[] p = raw.Split(',');
-            if (p.Length != 3) throw new FormatException();
-            return new Vector3(ParseFloat(p[0]), ParseFloat(p[1]), ParseFloat(p[2]));
+            try
+            {
+                switch (setting.valueType)
+                {
+                    case OverrideValueType.Integer:
+                        setting.intValue = int.Parse(
+                            raw,
+                            CultureInfo.InvariantCulture);
+                        break;
+
+                    case OverrideValueType.Float:
+                        setting.floatValue = float.Parse(
+                            raw,
+                            CultureInfo.InvariantCulture);
+                        break;
+
+                    case OverrideValueType.String:
+                        setting.stringValue = raw;
+                        break;
+
+                    case OverrideValueType.Vector3:
+                        {
+                            string[] p = raw.Split(',');
+
+                            if (p.Length != 3)
+                                throw new FormatException();
+
+                            setting.vector3Value =
+                                new Vector3(
+                                    ParseFloat(p[0]),
+                                    ParseFloat(p[1]),
+                                    ParseFloat(p[2]));
+
+                            break;
+                        }
+
+                    case OverrideValueType.Color:
+                        {
+                            string[] p = raw.Split(',');
+
+                            if (p.Length != 3 &&
+                                p.Length != 4)
+                                throw new FormatException();
+
+                            setting.colorValue =
+                                new Color(
+                                    ParseFloat(p[0]),
+                                    ParseFloat(p[1]),
+                                    ParseFloat(p[2]),
+                                    p.Length == 4
+                                        ? ParseFloat(p[3])
+                                        : 1f);
+
+                            break;
+                        }
+                }
+
+                errorText.text = "";
+            }
+            catch (Exception)
+            {
+                errorText.text =
+                    $"Invalid value for {setting.memberName}.";
+            }
         }
 
-        private static Color ParseColor(string raw)
+        private static float ParseFloat(string value)
         {
-            string[] p = raw.Split(',');
-            if (p.Length != 3 && p.Length != 4) throw new FormatException();
-            return new Color(ParseFloat(p[0]), ParseFloat(p[1]), ParseFloat(p[2]), p.Length == 4 ? ParseFloat(p[3]) : 1f);
+            return float.Parse(
+                value.Trim(),
+                CultureInfo.InvariantCulture);
         }
 
-        private static float ParseFloat(string value) => float.Parse(value.Trim(), CultureInfo.InvariantCulture);
-
-        private void RefreshStatus()
+        private void AddBoolSetting(
+            string label,
+            bool initial,
+            Action<bool> changed)
         {
-            if (statusText == null) return;
-            bool active = selectedMode == ActiveMode;
-            statusText.text = active ? "●  CURRENTLY ACTIVE" : $"○  SWITCH FROM {ActiveMode.ToString().ToUpperInvariant()}";
-            statusText.color = active ? FindProfile(selectedMode).accent : Muted;
+            GameObject row =
+                MakeRow(label, 55f);
+
+            Text text =
+                AddText(
+                    row.transform,
+                    label,
+                    16,
+                    White);
+
+            text.gameObject
+                .AddComponent<LayoutElement>()
+                .flexibleWidth = 1;
+
+            GameObject box =
+                PanelObject(
+                    "Toggle",
+                    row.transform,
+                    Background);
+
+            box.AddComponent<LayoutElement>()
+                .preferredWidth = 58;
+
+            Toggle toggle =
+                box.AddComponent<Toggle>();
+
+            GameObject check =
+                PanelObject(
+                    "Check",
+                    box.transform,
+                    new Color32(
+                        86, 225, 170, 255));
+
+            RectTransform rect =
+                check.GetComponent<RectTransform>();
+
+            rect.anchorMin =
+                new Vector2(0.25f, 0.2f);
+
+            rect.anchorMax =
+                new Vector2(0.75f, 0.8f);
+
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            toggle.targetGraphic =
+                box.GetComponent<Image>();
+
+            toggle.graphic =
+                check.GetComponent<Image>();
+
+            toggle.isOn = initial;
+
+            toggle.onValueChanged.AddListener(
+                value => changed(value));
+        }
+
+        private void AddCycleSetting(
+            string label,
+            string current,
+            UnityAction next)
+        {
+            GameObject row =
+                MakeRow(label, 55f);
+
+            AddText(
+                row.transform,
+                label,
+                16,
+                White)
+                .gameObject
+                .AddComponent<LayoutElement>()
+                .flexibleWidth = 1;
+
+            Button button =
+                AddButton(
+                    row.transform,
+                    current + "  ▸",
+                    next);
+
+            button.gameObject
+                .AddComponent<LayoutElement>()
+                .preferredWidth = 255;
+        }
+
+        private void AddTextSetting(
+            string label,
+            string current,
+            Action<string> changed)
+        {
+            GameObject row =
+                MakeRow(label, 66f);
+
+            AddText(
+                row.transform,
+                label,
+                15,
+                White)
+                .gameObject
+                .AddComponent<LayoutElement>()
+                .flexibleWidth = 1;
+
+            GameObject inputObject =
+                PanelObject(
+                    "Value",
+                    row.transform,
+                    Background);
+
+            inputObject.AddComponent<LayoutElement>()
+                .preferredWidth = 275;
+
+            InputField input =
+                inputObject.AddComponent<InputField>();
+
+            Text text =
+                AddText(
+                    inputObject.transform,
+                    "",
+                    15,
+                    White);
+
+            Stretch(text.rectTransform);
+
+            text.rectTransform.offsetMin =
+                new Vector2(10f, 0f);
+
+            text.rectTransform.offsetMax =
+                new Vector2(-10f, 0f);
+
+            input.textComponent = text;
+            input.text = current;
+
+            input.onEndEdit.AddListener(
+                value => changed(value));
+        }
+
+        private GameObject MakeRow(
+            string label,
+            float height)
+        {
+            GameObject row =
+                PanelObject(
+                    label,
+                    settingsRoot,
+                    Row);
+
+            row.AddComponent<LayoutElement>()
+                .preferredHeight = height;
+
+            HorizontalLayoutGroup layout =
+                row.AddComponent<HorizontalLayoutGroup>();
+
+            layout.padding =
+                new RectOffset(16, 16, 7, 7);
+
+            layout.spacing = 12;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+
+            return row;
         }
 
         private void EnsureEventSystem()
         {
-            if (FindFirstObjectByType<EventSystem>() != null) return;
-            GameObject eventSystem = new GameObject("EventSystem", typeof(EventSystem));
+            if (FindFirstObjectByType<EventSystem>() != null)
+                return;
+
+            GameObject system =
+                new GameObject(
+                    "EventSystem",
+                    typeof(EventSystem));
+
 #if ENABLE_INPUT_SYSTEM
-            eventSystem.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+            system.AddComponent<
+                UnityEngine.InputSystem.UI
+                    .InputSystemUIInputModule>();
 #else
-            eventSystem.AddComponent<StandaloneInputModule>();
+            system.AddComponent<
+                StandaloneInputModule>();
 #endif
-            if (persistBetweenScenes) DontDestroyOnLoad(eventSystem);
         }
 
-        private static GameObject NewUi(string name, Transform parent)
+        private static GameObject NewUI(
+            string name,
+            Transform parent)
         {
-            GameObject item = new GameObject(name, typeof(RectTransform));
-            item.transform.SetParent(parent, false);
+            GameObject item =
+                new GameObject(
+                    name,
+                    typeof(RectTransform));
+
+            item.transform.SetParent(
+                parent,
+                false);
+
             return item;
         }
 
-        private static GameObject PanelObject(string name, Transform parent, Color color)
+        private static GameObject PanelObject(
+            string name,
+            Transform parent,
+            Color color)
         {
-            GameObject item = NewUi(name, parent);
-            item.AddComponent<Image>().color = color;
+            GameObject item =
+                NewUI(name, parent);
+
+            item.AddComponent<Image>().color =
+                color;
+
             return item;
         }
 
-        private Text AddText(Transform parent, string value, int size, Color color, FontStyle style)
+        private Text AddText(
+            Transform parent,
+            string content,
+            int size,
+            Color color)
         {
-            Text text = NewUi("Text", parent).AddComponent<Text>();
-            text.font = builtInFont;
-            text.text = value;
+            Text text =
+                NewUI("Text", parent)
+                    .AddComponent<Text>();
+
+            text.font = font;
+            text.text = content;
             text.fontSize = size;
             text.color = color;
-            text.fontStyle = style;
-            text.alignment = TextAnchor.MiddleLeft;
-            text.horizontalOverflow = HorizontalWrapMode.Wrap;
-            text.verticalOverflow = VerticalWrapMode.Truncate;
+            text.alignment =
+                TextAnchor.MiddleLeft;
+
             return text;
         }
 
-        private Button AddButton(Transform parent, string label, Color accent, UnityAction action)
+        private Button AddButton(
+            Transform parent,
+            string label,
+            UnityAction action)
         {
-            GameObject item = PanelObject(label, parent, PanelLight);
-            Button button = item.AddComponent<Button>();
-            button.targetGraphic = item.GetComponent<Image>();
-            ColorBlock colors = button.colors;
-            colors.normalColor = PanelLight;
-            colors.highlightedColor = WithAlpha(accent, 0.65f);
-            colors.pressedColor = accent;
-            colors.selectedColor = WithAlpha(accent, 0.65f);
-            button.colors = colors;
+            GameObject item =
+                PanelObject(
+                    label,
+                    parent,
+                    Row);
+
+            Button button =
+                item.AddComponent<Button>();
+
+            button.targetGraphic =
+                item.GetComponent<Image>();
+
             button.onClick.AddListener(action);
-            Text text = AddText(item.transform, label, 15, White, FontStyle.Bold);
-            text.alignment = TextAnchor.MiddleCenter;
+
+            Text text =
+                AddText(
+                    item.transform,
+                    label,
+                    15,
+                    White);
+
+            text.alignment =
+                TextAnchor.MiddleCenter;
+
             Stretch(text.rectTransform);
+
             return button;
         }
 
-        private InputField AddInput(Transform parent, string value)
-        {
-            GameObject item = PanelObject("Input", parent, Navy);
-            InputField input = item.AddComponent<InputField>();
-            Text text = AddText(item.transform, value, 15, White, FontStyle.Normal);
-            text.rectTransform.offsetMin = new Vector2(10, 0);
-            text.rectTransform.offsetMax = new Vector2(-10, 0);
-            Stretch(text.rectTransform);
-            input.textComponent = text;
-            input.text = value;
-            return input;
-        }
-
-        private Toggle AddToggle(Transform parent, bool value, bool interactable)
-        {
-            GameObject root = NewUi("Toggle", parent);
-            root.AddComponent<LayoutElement>().preferredWidth = 54;
-            Toggle toggle = root.AddComponent<Toggle>();
-            GameObject background = PanelObject("Background", root.transform, Navy);
-            Stretch(background.GetComponent<RectTransform>());
-            GameObject check = PanelObject("Checkmark", background.transform, new Color32(82, 210, 160, 255));
-            RectTransform checkRect = check.GetComponent<RectTransform>();
-            checkRect.anchorMin = new Vector2(0.52f, 0.12f);
-            checkRect.anchorMax = new Vector2(0.94f, 0.88f);
-            checkRect.offsetMin = checkRect.offsetMax = Vector2.zero;
-            toggle.targetGraphic = background.GetComponent<Image>();
-            toggle.graphic = check.GetComponent<Image>();
-            toggle.isOn = value;
-            toggle.interactable = interactable;
-            return toggle;
-        }
-
-        private static void Stretch(RectTransform rect)
+        private static void Stretch(
+            RectTransform rect)
         {
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        private static Color WithAlpha(Color color, float alpha)
-        {
-            color.a = alpha;
-            return color;
         }
     }
 }

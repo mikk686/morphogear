@@ -19,7 +19,7 @@ from threading import Lock
 class STM(Node):
     def __init__(self, serial_port_name:str, baudrate=921600): 
         super().__init__("stm_node")
-        self.anglesub=self.create_subscription(Int8MultiArray, "/angles_control",self.set_angles_callback,10)
+        # self.anglesub=self.create_subscription(Int8MultiArray, "/angles_control",self.set_angles_callback,10)
         self.anglesub_mg=self.create_subscription(Int8MultiArray, "/angles_control_mg",self.set_angles_callback,10)
         self.wristsub=self.create_subscription(Int16MultiArray, "/wrist",self.set_wrist,10)
         # self.speedsub=self.create_subscription(Speed, "/speed",self.set_speed_callback,10)

@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'control = walkcontrol.control:main'
+            'control = walkcontrol.control:main',
+            'convert = walkcontrol.walk_vector_to_string:main'
         ],
     },
 )

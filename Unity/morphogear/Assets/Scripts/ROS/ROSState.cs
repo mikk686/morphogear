@@ -31,6 +31,8 @@ public class RobotStateDisplay : MonoBehaviour
 
     public GameObject cameraObject;
 
+    public bool cameraAllowed=false;
+
     void Start()
     {
         _ros = ROSConnection.GetOrCreateInstance();
@@ -57,10 +59,12 @@ public class RobotStateDisplay : MonoBehaviour
 
             gaitText.text = $"Gait: {gait}";
 
-            if (gait == "Trot")   {cameraObject.transform.localPosition = new Vector3(0f, 0.3f, -1.2f); cameraObject.transform.localRotation = Quaternion.Euler(10f, 0f, 0f);   }
-            if (gait == "Canter") {cameraObject.transform.localPosition = new Vector3(1f, 0.5f, -1f);   cameraObject.transform.localRotation = Quaternion.Euler(15f, -45f, 0f); }
-            if (gait == "Gallop") {cameraObject.transform.localPosition = new Vector3(0f, 0.5f, -1.5f); cameraObject.transform.localRotation = Quaternion.Euler(15f, 0f, 0f);   }
-
+            if (cameraAllowed)
+            {
+                if (gait == "Trot") { cameraObject.transform.localPosition = new Vector3(0f, 0.3f, -1.2f); cameraObject.transform.localRotation = Quaternion.Euler(10f, 0f, 0f); }
+                if (gait == "Canter") { cameraObject.transform.localPosition = new Vector3(1f, 0.5f, -1f); cameraObject.transform.localRotation = Quaternion.Euler(15f, -45f, 0f); }
+                if (gait == "Gallop") { cameraObject.transform.localPosition = new Vector3(0f, 0.5f, -1.5f); cameraObject.transform.localRotation = Quaternion.Euler(15f, 0f, 0f); }
+            }
     }
         if (modeText) modeText.text = $"Mode: {mode}";
         if (busyText)

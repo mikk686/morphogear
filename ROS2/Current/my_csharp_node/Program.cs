@@ -137,13 +137,21 @@ namespace ConsoleApplication
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
             Console.WriteLine("morphogear node started. Mode: ManualController (Trot).");
 
+            // await Task.WhenAll(
+            //     ListenCmdAsync(cts.Token),
+            //     ListenKeyboardAsync(cts.Token),
+            //     ListenManualAsync(cts.Token),
+            //     ListenKMPCAsync(cts.Token),
+            //     PublishTimerLoopAsync(cts.Token),
+            //     PublishStateLoopAsync(cts.Token));           // NEW
             await Task.WhenAll(
-                ListenCmdAsync(cts.Token),
-                ListenKeyboardAsync(cts.Token),
-                ListenManualAsync(cts.Token),
-                ListenKMPCAsync(cts.Token),
-                PublishTimerLoopAsync(cts.Token),
-                PublishStateLoopAsync(cts.Token));           // NEW
+                    ListenCmdAsync(cts.Token),
+                    ListenKeyboardAsync(cts.Token),
+                    ListenManualAsync(cts.Token),
+                    ListenKMPCAsync(cts.Token),
+                    ListenUnityAnglesAsync(cts.Token),
+                    PublishTimerLoopAsync(cts.Token),
+                    PublishStateLoopAsync(cts.Token));
         }
 
         private async Task ListenCmdAsync(CancellationToken token)
@@ -159,6 +167,7 @@ namespace ConsoleApplication
             await foreach (var msg in sub.ReadAllAsync(token))
             {
                 _kb = Keyboard.Parse(msg.Data);
+                if (controlType) continue;
                 switch (_currentMode)
                 {
                     case ControlMode.ManualController:  ManualController(_kb);          break;
@@ -175,6 +184,21 @@ namespace ConsoleApplication
             {
                 controlType = msg.Data;
                 Console.WriteLine(msg.Data ? "Manual Unity Control" : "Internal Control");
+            }
+        }
+
+        private async Task ListenUnityAnglesAsync(CancellationToken token)
+        {
+            using var sub =
+                node.CreateSubscription<RosInt8MultiArray>("/angles_control");
+
+            await foreach (var msg in sub.ReadAllAsync(token))
+            {
+                // Mirror mode only: Unity supplies the joint targets.
+                if (!controlType || msg.Data == null || msg.Data.Length < 12)
+                    continue;
+
+                SetControlAngles(new List<sbyte>(msg.Data));
             }
         }
 
@@ -214,7 +238,8 @@ namespace ConsoleApplication
                 try
                 {
                     await timer.WaitOneAsync(false, token);
-                    if (!controlType) PublishAngles();
+                    PublishAngles();
+                    // if (!controlType) PublishAngles();
                 }
                 catch (OperationCanceledException) { break; }
             }
@@ -591,7 +616,7 @@ namespace ConsoleApplication
 
 
 
-
+        private int _direction;
         private async Task ExecuteAngle(int direction, int _walkAngle, float speedRotation, CancellationToken ct)
         {
             Mover[][] movers = { _rightForward, _rightHind, _leftHind, _leftForward };
@@ -620,6 +645,11 @@ namespace ConsoleApplication
 
                 case GaitType.Gallop:
                     speedRotation*=1.75f;
+                    if (_direction!=direction)
+                    {
+                        await InitialPosition(resetDir, speedRotation, ct);
+                    }
+                    _direction = direction;
                     resetDir = direction+1;
                     if (resetDir>4) resetDir=1;
                     _walkAngle=(int)Clamp(_walkAngle,-15f,15f);
@@ -1158,15 +1188,30 @@ namespace ConsoleApplication
             await Task.WhenAll(tf, tb);
         }
 
+        // public void Articulate(int index, bool rot)
+        // {
+        //     Mover[][] movers = { _leftHind, _leftForward, _rightForward, _rightHind };
+        //     float angle = movers[teleopDirection][index].Target();
+        //     int sign = rot ? 1 : -1;
+        //     float min = index == 0 ? -30f : -90f;
+        //     float max = index == 0 ?  30f :  90f;
+        //     angle = Clamp(angle, min, max);
+        //     movers[teleopDirection][index].RotateTo((sbyte)(angle + sign * 0.1f));
+        // }
+
         public void Articulate(int index, bool rot)
         {
-            Mover[][] movers = { _leftHind, _leftForward, _rightForward, _rightHind };
-            float angle = movers[teleopDirection][index].Target();
-            int sign = rot ? 1 : -1;
-            float min = index == 0 ? -30f : -90f;
-            float max = index == 0 ?  30f :  90f;
-            angle = Clamp(angle, min, max);
-            movers[teleopDirection][index].RotateTo((sbyte)(angle + sign * 0.1f));
+            if (!controlRights || index < 0 || index > 2)
+                return;
+
+            Mover[][] movers =
+            {
+                _leftHind, _leftForward, _rightForward, _rightHind
+            };
+
+            // At 15 keyboard messages/second, 1 degree/message is
+            // approximately 15 degrees/second while the key is held.
+            movers[teleopDirection][index].Nudge(rot ? 1f : -1f);
         }
 
         private bool grab = true;
@@ -1231,47 +1276,6 @@ namespace ConsoleApplication
             Console.WriteLine("KMPC Trajectory executed");
             controlRights = true;
         }
-
-        // public async void MoveRobotBySequence(List<sbyte> angles)
-        // {
-        //     var cts = new CancellationTokenSource();
-        //     controlRights = false;
-        //     Console.WriteLine("Walking KMPC Trajectories");
-        //     await Task.Delay(100);
-
-        //     if (CommunicatorDotNet.GetAngleDelegate(0) != 0 || CommunicatorDotNet.GetAngleDelegate(1) != 0 ||
-        //         CommunicatorDotNet.GetAngleDelegate(2) != 0 || CommunicatorDotNet.GetAngleDelegate(3) != 0)
-        //         await InitialPosition(resetDir, speed, cts.Token);
-
-        //     await Task.WhenAny(ExecuteTrajectory(angles, cts.Token), Task.Delay(60000));
-        //     cts.Cancel();
-        //     await Task.Delay(100);
-        //     CommunicatorDotNet.Request_KMPC_Delegate(new RosEmpty());
-        //     Console.WriteLine("KMPC Trajectory executed");
-        //     controlRights = true;
-        // }
-
-        // private async Task ExecuteTrajectory(List<sbyte> angles, CancellationToken token)
-        // {
-        //     for (int i = 0; i < 200; i++)
-        //     {
-        //         if (token.IsCancellationRequested) return;
-        //         _rightForward[0].RotateTo(0); _rightHind[0].RotateTo(0);
-        //         _leftHind[0].RotateTo(0);     _leftForward[0].RotateTo(0);
-
-        //         _rightForward[1].RotateTo(angles[i]);
-        //         _rightForward[2].RotateTo(angles[200 + i]);
-        //         _rightHind[1].RotateTo(angles[400 + i]);
-        //         _rightHind[2].RotateTo(angles[600 + i]);
-        //         _leftHind[1].RotateTo(angles[800 + i]);
-        //         _leftHind[2].RotateTo(angles[1000 + i]);
-        //         _leftForward[1].RotateTo(angles[1200 + i]);
-        //         _leftForward[2].RotateTo(angles[1400 + i]);
-
-        //         await Task.Delay(20, token);
-        //         await Task.Yield();
-        //     }
-        // }
 
 
         // Updated C# code for dynamic trajectory execution
@@ -1388,17 +1392,38 @@ namespace ConsoleApplication
         }
 
 
-        // PLACEHOLDER: replace with the real curve from Calculations.Calculation.
+        // // PLACEHOLDER: replace with the real curve from Calculations.Calculation.
+        // public float[][] trajectorySitDown(int pointNumber)
+        // {
+        //     float standH = (float)(Math.Sin(initialStandingAngle * Math.PI / 180) * L_UA + L_FA - 10);
+        //     var x = new List<float>(); var y = new List<float>();
+        //     for (int i = 0; i < pointNumber; i++)
+        //     {
+        //         float t = i / (float)(pointNumber - 1);
+        //         x.Add((float)(t * (L_UA + L_FA) * 0.9));
+        //         y.Add(-standH * (1 - t) - L_FA * 0.1f * t);
+        //     }
+        //     return new[] { x.ToArray(), y.ToArray() };
+        // }
+
         public float[][] trajectorySitDown(int pointNumber)
         {
-            float standH = (float)(Math.Sin(initialStandingAngle * Math.PI / 180) * L_UA + L_FA - 10);
-            var x = new List<float>(); var y = new List<float>();
-            for (int i = 0; i < pointNumber; i++)
+            var x = new List<float>();
+            var y = new List<float>();
+
+            // Вычисляем desire строго по первой формуле
+            double desire = Math.Sqrt(Math.Pow(L_UA + L_FA, 2) - Math.Pow(L_UA, 2));
+
+            for (int i = ((int)pointNumber/5); i < pointNumber; i++)
             {
-                float t = i / (float)(pointNumber - 1);
-                x.Add((float)(t * (L_UA + L_FA) * 0.9));
-                y.Add(-standH * (1 - t) - L_FA * 0.1f * t);
+                // В первой функции X всегда равен L_UA (так как он передавался в InverseKinematics(L_UA, y))
+                x.Add((float)L_UA);
+
+                // Расчет Y строго по первой формуле: -desire + (desire - L_FA) * (i + 1) / segmentNum
+                double currentY = -desire + (desire - L_FA) * (i + 1) / pointNumber;
+                y.Add((float)currentY);
             }
+
             return new[] { x.ToArray(), y.ToArray() };
         }
 
@@ -1433,6 +1458,7 @@ namespace ConsoleApplication
 
         private readonly int index;
         private sbyte _target;
+        private float _preciseTarget;
 
         public Mover(int lowerLimits, int upperLimits, int idx)
         {
@@ -1486,11 +1512,29 @@ namespace ConsoleApplication
         public void RotateTo(sbyte primaryAxisRotation)
         {
             primaryAxisRotation = (sbyte)Math.Clamp((int)primaryAxisRotation, lowerLimit, upperLimit);
+            _preciseTarget = primaryAxisRotation;
             _target = primaryAxisRotation;
             CommunicatorDotNet.SetAngleDelegate(primaryAxisRotation, index);
         }
 
         // Convenience overload for float callers — clamps and casts internally.
         public void RotateTo(float angle) => RotateTo((sbyte)Math.Clamp((int)angle, lowerLimit, upperLimit));
+    
+        public void Nudge(float degrees)
+        {
+            // Keep fractional movement between keyboard messages.
+            _preciseTarget = Math.Clamp(
+                _preciseTarget + degrees,
+                lowerLimit,
+                upperLimit);
+
+            sbyte next = (sbyte)MathF.Round(_preciseTarget);
+
+            if (next == _target)
+                return;
+
+            _target = next;
+            CommunicatorDotNet.SetAngleDelegate(next, index);
+        }
     }
 }

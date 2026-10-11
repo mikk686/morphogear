@@ -1,0 +1,21 @@
+flight_controller:
+  ros__parameters:
+    # Set true ONLY after measuring bounds and checking frame alignment.
+    bounds_configured: true
+    frame_id: map
+    box_min: [-2.0, -2.0, -0.5]
+    box_max: [2.0, 2.0, 2.5]
+    boundary_margin: 0.2
+    prediction_seconds: 0.5
+    max_speed: 0.5
+    max_yaw_rate: 0.5
+    command_timeout: 0.5
+    pose_timeout: 0.3
+    state_timeout: 3.0
+    extended_state_timeout: 3.0
+    service_timeout: 5.0
+    action_timeout: 30.0
+    publish_hz: 20.0
+    position_tolerance: 0.15
+    takeoff_altitude: 1.0
+    home_z: 0.0
