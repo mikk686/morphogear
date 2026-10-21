@@ -1,9 +1,10 @@
+using RosMessageTypes.Geometry;
+using RosMessageTypes.Std;
 using System;
 using System.Globalization;
-using RosMessageTypes.Std;
-using RosMessageTypes.Geometry;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.MessageGeneration;
+using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using UnityEngine;
 
 namespace FlightControlUI
@@ -163,21 +164,25 @@ namespace FlightControlUI
         }
         public void Takeoff() { SetManualEnabled(false); if (Send("takeoff_unity", new BoolMsg(true))) message = "Takeoff requested."; }
         public void Land() { SetManualEnabled(false); if (Send("land_unity", new BoolMsg(true))) message = "LAND requested; verify mode and touchdown."; }
-        Vector3 ToENU(Vector3 world)
-        {
-            var p = rosOrigin == null ? world : Quaternion.Inverse(rosOrigin.rotation) * (world - rosOrigin.position);
-            return new Vector3(p.x, p.z, p.y);
-        }
+        //Vector3 ToENU(Vector3 world)
+        //{
+        //    var p = rosOrigin == null ? world : Quaternion.Inverse(rosOrigin.rotation) * (world - rosOrigin.position);
+        //    return new Vector3(p.x, p.z, p.y);
+        //}
         public void SendTarget()
         {
             if (target == null) { message = "Assign Target in Inspector."; return; }
             SetManualEnabled(false);
-            var p = ToENU(target.position);
-            var local = rosOrigin == null ? target.rotation : Quaternion.Inverse(rosOrigin.rotation) * target.rotation;
-            var q = Quaternion.AngleAxis(-90, Vector3.up) * local;
+            //var p = ToENU(target.position);
+            //var local = rosOrigin == null ? target.rotation : Quaternion.Inverse(rosOrigin.rotation) * target.rotation;
+            //var q = Quaternion.AngleAxis(-90, Vector3.up) * local;
+            //msg.pose.position.x = p.x; msg.pose.position.y = p.y; msg.pose.position.z = p.z;
+            //msg.pose.orientation.x = q.z; msg.pose.orientation.y = -q.x; msg.pose.orientation.z = q.y; msg.pose.orientation.w = -q.w;
+
             var msg = new PoseStampedMsg(); Stamp(msg.header);
-            msg.pose.position.x = p.x; msg.pose.position.y = p.y; msg.pose.position.z = p.z;
-            msg.pose.orientation.x = q.z; msg.pose.orientation.y = -q.x; msg.pose.orientation.z = q.y; msg.pose.orientation.w = -q.w;
+            msg.pose.position = target.transform.position.To<FLU>();
+            msg.pose.orientation = target.transform.rotation.To<FLU>();
+
             if (Send("b3/waypoint", msg)) message = "Target snapshot sent. Pause other velocity publishers to keep position control.";
         }
         void Stamp(HeaderMsg h)
@@ -320,6 +325,83 @@ namespace FlightControlUI
                 heading.SetHeading(Status.yaw_enu);
                 headingInitialized = true;
             }
+        }
+
+
+        // Add these methods inside the first partial class (Logic file), e.g., right below SendTarget():
+
+        public void LoadTarget()
+        {
+            if (target == null)
+            {
+                message = "Assign Target in Inspector to load its transform.";
+                return;
+            }
+            Vector3 pos = rosOrigin == null ? target.position : rosOrigin.InverseTransformPoint(target.position);
+            float yaw = (rosOrigin == null ? target.rotation : Quaternion.Inverse(rosOrigin.rotation) * target.rotation).eulerAngles.y;
+
+            targetFields[0].text = pos.x.ToString("G", CultureInfo.InvariantCulture);
+            targetFields[1].text = pos.y.ToString("G", CultureInfo.InvariantCulture);
+            targetFields[2].text = pos.z.ToString("G", CultureInfo.InvariantCulture);
+            targetFields[3].text = yaw.ToString("F1", CultureInfo.InvariantCulture);
+            message = "Loaded current Target transform values.";
+        }
+
+        public bool ApplyTargetTransform()
+        {
+            var values = new float[4];
+            for (int i = 0; i < 4; i++)
+            {
+                if (!float.TryParse(targetFields[i].text, NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) || !float.IsFinite(values[i]))
+                {
+                    message = "Enter finite numbers for Target using decimal point.";
+                    return false;
+                }
+            }
+
+            Vector3 localPos = new Vector3(values[0], values[1], values[2]);
+            Quaternion localRot = Quaternion.Euler(0f, values[3], 0f);
+
+            if (target != null)
+            {
+                target.position = rosOrigin == null ? localPos : rosOrigin.TransformPoint(localPos);
+                target.rotation = rosOrigin == null ? localRot : rosOrigin.rotation * localRot;
+            }
+
+            message = "Target position updated locally.";
+            return true;
+        }
+
+        public void ApplyAndSendTarget()
+        {
+            if (!ApplyTargetTransform()) return;
+
+            SetManualEnabled(false);
+            var msg = new PoseStampedMsg();
+            Stamp(msg.header);
+
+            if (target != null)
+            {
+                msg.pose.position = target.transform.position.To<FLU>();
+                msg.pose.orientation = target.transform.rotation.To<FLU>();
+            }
+            else
+            {
+                // Fallback if no target Transform is assigned in Inspector: use values directly
+                float x = float.Parse(targetFields[0].text, CultureInfo.InvariantCulture);
+                float y = float.Parse(targetFields[1].text, CultureInfo.InvariantCulture);
+                float z = float.Parse(targetFields[2].text, CultureInfo.InvariantCulture);
+                float yaw = float.Parse(targetFields[3].text, CultureInfo.InvariantCulture);
+
+                Vector3 worldPos = rosOrigin == null ? new Vector3(x, y, z) : rosOrigin.TransformPoint(new Vector3(x, y, z));
+                Quaternion worldRot = rosOrigin == null ? Quaternion.Euler(0, yaw, 0) : rosOrigin.rotation * Quaternion.Euler(0, yaw, 0);
+
+                msg.pose.position = worldPos.To<FLU>();
+                msg.pose.orientation = worldRot.To<FLU>();
+            }
+
+            if (Send("b3/waypoint", msg))
+                message = "Updated target snapshot sent. Pause other velocity publishers to keep position control.";
         }
 
 

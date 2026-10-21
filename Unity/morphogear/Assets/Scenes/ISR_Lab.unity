@@ -199,8 +199,8 @@ MonoBehaviour:
   poseChannelMode: 0
   visualization: 0
   teleportPoseSource: 0
-  poseTransform: {fileID: 925239572}
-  depthTopic: /depth
+  poseTransform: {fileID: 0}
+  depthTopic: /camera/camera/depth/image_rect_raw
   rgbdCamera: {fileID: 516011265}
   publishDepth: 0
   odomTopic: odometry
@@ -2010,11 +2010,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RGBDCamera
   _frequency: 20
   _resolution: {x: 424, y: 240}
-  _fov: 90
   _minRange: 0.25
   _maxRange: 10
   _depthErrorScale: 0.005
   _pointCloudCompute: {fileID: 7200000, guid: ce7878e0cb12d11459e0ac0873241f43, type: 3}
+  _fovMode: 1
+  _fov: 87
 --- !u!20 &516011266
 Camera:
   m_ObjectHideFlags: 0
@@ -2573,11 +2574,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 914482319}
   m_CullTransparentMesh: 1
---- !u!4 &925239572 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3931874892350348370, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-  m_PrefabInstance: {fileID: 4789384383925211749}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &986887633
 GameObject:
   m_ObjectHideFlags: 0
@@ -17770,67 +17766,6 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1001 &4789384383925211749
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 2303490125311687838, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_Name
-      value: Optitrack
-      objectReference: {fileID: 0}
-    - target: {fileID: 2303490125311687838, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_IsActive
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 9124338421032777144, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 2a30c99987f89b042bb1bc438bbb6ce5, type: 3}
 --- !u!23 &4800543504001659304
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -30653,7 +30588,6 @@ SceneRoots:
   - {fileID: 858607607}
   - {fileID: 279215142}
   - {fileID: 2111903057}
-  - {fileID: 4789384383925211749}
   - {fileID: 89768168}
   - {fileID: 325181727}
   - {fileID: 1713673609}

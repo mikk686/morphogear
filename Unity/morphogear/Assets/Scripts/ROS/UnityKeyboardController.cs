@@ -648,7 +648,7 @@ public class UnifiedKeyboardController : MonoBehaviour
             //control.controlRights = false;
             commander.currentMode =
                 DroneCommander.CommanderMode.PositionControl;
-            commander.targetPosition = transform.position + 2 * Vector3.up;
+            commander.targetPosition = MG.transform.position + 2 * Vector3.up;
 
             await Awaitable.WaitForSecondsAsync(3f);
 

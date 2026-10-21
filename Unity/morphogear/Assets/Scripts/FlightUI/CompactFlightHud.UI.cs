@@ -10,13 +10,15 @@ namespace FlightControlUI
 {
     public sealed partial class CompactFlightHud
     {
-        GameObject root, sticks, boundsPanel, detailsPanel;
+        GameObject root, sticks, boundsPanel, detailsPanel, targetPanel;
         HudStick move, lift, heading;
         Text moveTitle, liftTitle, velocityModeLabel;
         Texture2D circleTexture;
         Sprite circleSprite;
-        Text statusLine, resultLine, noticeLine, detailText, manualLabel, boundsLabel;
+        Text statusLine, resultLine, noticeLine, detailText, manualLabel, boundsLabel, targetLabel;
         readonly InputField[] fields = new InputField[7];
+
+        readonly InputField[] targetFields = new InputField[4]; // <-- X, Y, Z, Yaw
         readonly Color background = new Color(0.035f, 0.05f, 0.07f, 0.88f);
         readonly Color foreground = new Color(0.85f, 0.92f, 0.95f);
         readonly Color accent = new Color(0.22f, 0.88f, 0.78f);
@@ -48,7 +50,14 @@ namespace FlightControlUI
             Button(top, "GUIDED", 420, 34, 96, () => SetMode("GUIDED"));
             Button(top, "TAKEOFF", 534, 34, 98, Takeoff);
             Button(top, "LAND", 638, 34, 78, Land);
-            Button(top, "SET POSITION", 734, 34, 134, SendTarget);
+            //Button(top, "SET POSITION", 734, 34, 134, SendTarget);
+            Button(top, "SET POSITION", 734, 34, 134, () =>
+            {
+                bool opening = !targetPanel.activeSelf;
+                targetPanel.SetActive(opening);
+                if (opening && target != null) LoadTarget();
+            });
+
             manualLabel = Button(top, "JOYSTICKS OFF", 882, 34, 154, () => SetManualEnabled(!ManualEnabled)).GetComponentInChildren<Text>();
             Button(top, "BOUNDS", 1052, 34, 110, () => boundsPanel.SetActive(!boundsPanel.activeSelf));
             Button(top, "DETAILS", 1168, 34, 108, () => detailsPanel.SetActive(!detailsPanel.activeSelf));
@@ -76,6 +85,25 @@ namespace FlightControlUI
             Button(boundsPanel.transform, "APPLY", 177, 198, 178, ApplyBounds);
             boundsLabel = Label(boundsPanel.transform, "", 14, 244, 342, 30, 12);
             boundsPanel.SetActive(false);
+
+            targetPanel = Panel(root.transform, "Target editor", 734, 134, 370, 210).gameObject;
+            Label(targetPanel.transform, "TARGET POSITION / UNITY METRES", 14, 10, 342, 24, 16);
+            Label(targetPanel.transform, "X", 14, 40, 80, 22, 13);
+            Label(targetPanel.transform, "Y", 102, 40, 80, 22, 13);
+            Label(targetPanel.transform, "Z", 190, 40, 80, 22, 13);
+            Label(targetPanel.transform, "Yaw", 278, 40, 80, 22, 13);
+
+            string[] targetDefaults = { "0", "1", "0", "0" };
+            for (int i = 0; i < 4; i++)
+            {
+                targetFields[i] = Input(targetPanel.transform, 14 + i * 88, 68, 80, targetDefaults[i]);
+            }
+
+            Button(targetPanel.transform, "LOAD TARGET", 14, 118, 108, LoadTarget);
+            Button(targetPanel.transform, "MOVE ONLY", 128, 118, 108, () => ApplyTargetTransform());
+            Button(targetPanel.transform, "SEND", 242, 118, 114, ApplyAndSendTarget);
+            targetLabel = Label(targetPanel.transform, "", 14, 164, 342, 36, 12);
+            targetPanel.SetActive(false);
 
             detailsPanel = Panel(root.transform, "Details", 394, 134, 660, 270).gameObject;
             detailText = Label(detailsPanel.transform, "", 14, 12, 632, 250, 14);
@@ -168,6 +196,9 @@ namespace FlightControlUI
                 : message;
             manualLabel.text = !ManualEnabled ? "JOYSTICKS OFF" : HasManualInput ? "TRANSMITTING" : "JOYSTICKS ON";
             boundsLabel.text = s == null ? "No telemetry" : s.bounds_configured ? "Server box configured. Edits need APPLY." : "Not configured. Apply while disarmed.";
+
+            targetLabel.text = target == null ? "No Target Transform assigned (will send raw coordinates)." : $"Scene Target: {target.position.x:F2}, {target.position.y:F2}, {target.position.z:F2}  |  Server Goal: {XYZ(s?.goal)}";
+
             detailText.text = s == null ? "Waiting for status..." :
                 $"Movement: {(string.IsNullOrEmpty(s.safety) ? "READY" : s.safety)}\nLast stop: {s.stop_reason}\nFCU message: {s.fcu_text}\nGround confirmed: {s.grounded}\nFrame: {s.frame_id}   Goal: {XYZ(s.goal)}\nBox min: {XYZ(s.box_min)}   max: {XYZ(s.box_max)}\nMargin: {s.boundary_margin:F2} m   Takeoff: {s.takeoff_altitude:F2} m above home\nLimits: {s.max_speed:F2} m/s, {s.max_yaw_rate:F2} rad/s\nLast event: {e?.command} / {e?.result}\n{e?.detail}";
         }

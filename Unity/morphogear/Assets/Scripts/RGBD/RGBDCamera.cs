@@ -1,14 +1,15 @@
-using UnityEngine;
-using Unity.Collections;
-using UnityEngine.Rendering;
 using System;
+using Unity.Collections;
+using UnityEngine;
+using UnityEngine.Rendering;
+using static UnityEngine.UI.ContentSizeFitter;
 
 public class RGBDCamera : MonoBehaviour
 {
     [Header("Sensor Settings")]
     [SerializeField, Min(0.1f)] private float _frequency = 10.0f; // Default 10 Hz
     [SerializeField] private Vector2Int _resolution = new Vector2Int(640, 480);
-    [SerializeField] private float _fov = 60.0f;
+    //[SerializeField] private float _fov = 60.0f;
     [SerializeField] private float _minRange = 0.1f;
     [SerializeField] private float _maxRange = 10.0f;
     [SerializeField] private float _depthErrorScale = 0.005f;
@@ -30,6 +31,12 @@ public class RGBDCamera : MonoBehaviour
     private Vector3Int _dispatchGroups;
     private bool _isRunning = false;
 
+
+    public enum FovMode { Vertical, Horizontal }
+
+    [SerializeField] private FovMode _fovMode = FovMode.Horizontal;
+    [SerializeField, Range(1f, 179f)] private float _fov = 87f;
+
     private void Awake()
     {
         _pointsNum = _resolution.x * _resolution.y;
@@ -40,7 +47,19 @@ public class RGBDCamera : MonoBehaviour
         depthCamObj.transform.SetParent(transform, false);
         _depthCamera = depthCamObj.AddComponent<UnityEngine.Camera>();
 
-        _depthCamera.fieldOfView = _fov;
+        //_depthCamera.fieldOfView = _fov;
+
+        float aspect = (float)_resolution.x / _resolution.y;
+        _depthCamera.aspect = aspect;
+
+        _depthCamera.fieldOfView = _fovMode == FovMode.Horizontal
+            ? 2f * Mathf.Atan(
+                Mathf.Tan(_fov * Mathf.Deg2Rad * 0.5f) / aspect
+              ) * Mathf.Rad2Deg
+            : _fov;
+
+
+
         _depthCamera.nearClipPlane = _minRange;
         _depthCamera.farClipPlane = _maxRange;
         _depthCamera.enabled = false;
