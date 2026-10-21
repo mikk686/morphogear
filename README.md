@@ -24,6 +24,8 @@
 
 The limbs act as morphogenetic landing gear during flight and as pedipulators or manipulators during ground operation. Each limb has three degrees of freedom, giving the platform 12 actuated limb degrees of freedom in total.
 
+**Build of Simulator for Windows, to run without installation is available in Release section**
+
 This repository contains:
 
 - A **Unity-based digital twin and simulation environment**
@@ -220,17 +222,13 @@ Open separate terminals (sourcing ROS 2 and your workspace in each) and launch t
 
 #### 1. Start the ROS–TCP Endpoint
 ```bash
-cd ~/morphogear/ROS2
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+
 ros2 run ros_tcp_endpoint default_server_endpoint
 ```
 
 #### 2. Start the C# Limb & Gait Controller (`my_csharp_node`)
 ```bash
-cd ~/morphogear/ROS2
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+
 ros2 run my_csharp_node my_csharp_node
 ```
 
@@ -239,26 +237,20 @@ ros2 run my_csharp_node my_csharp_node
 
 ```bash
 # Terminal 3a — Walking policy inference node
-cd ~/morphogear/ROS2
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+
 ros2 run walkcontrol control --ros-args -p depth_input_width:=480 -p depth_input_height:=270
 ```
 *(Tip: If your workspace path differs from the default checkpoint path, pass `-p model_path:=/path/to/ROS2/src/walkcontrol/walkcontrol/policy_003500.pt`.)*
 
 ```bash
 # Terminal 3b — Walk vector to command string converter
-cd ~/morphogear/ROS2
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+
 ros2 run walkcontrol convert
 ```
 
 #### 4. Start the Flight Controller (`flightcontrol`)
 ```bash
-cd ~/morphogear/ROS2
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+
 ros2 run flightcontrol go
 ```
 
